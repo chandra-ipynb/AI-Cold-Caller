@@ -332,9 +332,31 @@ if __name__ == "__main__":
     load_db_settings_to_env()
     init_db()
 
+    # Resolve LiveKit credentials with fallback variable names
+    lk_url = (
+        os.getenv("LIVEKIT_URL")
+        or os.getenv("LIVEKIT_HTTP_URL", "").replace("https://", "wss://").replace("http://", "ws://")
+    )
+    lk_key = os.getenv("LIVEKIT_API_KEY") or os.getenv("LIVEKIT_HTTP_API_KEY") or os.getenv("API_KEY", "")
+    lk_secret = os.getenv("LIVEKIT_API_SECRET") or os.getenv("LIVEKIT_HTTP_API_SECRET") or os.getenv("API_SECRET_KEY", "")
+
+    if not lk_url or not lk_key or not lk_secret:
+        logger.error(
+            "Missing LiveKit credentials. Set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET.\n"
+            f"  LIVEKIT_URL={lk_url!r}\n"
+            f"  LIVEKIT_API_KEY={lk_key!r}\n"
+            f"  LIVEKIT_API_SECRET={'***' if lk_secret else 'MISSING'}"
+        )
+        exit(1)
+
+    logger.info(f"LiveKit worker connecting to {lk_url} with key={lk_key}")
+
     agents.cli.run_app(
         agents.WorkerOptions(
             entrypoint_fnc=entrypoint,
             agent_name="outbound-caller",
+            ws_url=lk_url,
+            api_key=lk_key,
+            api_secret=lk_secret,
         )
     )
