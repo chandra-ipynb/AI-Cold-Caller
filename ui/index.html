@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OutboundAI — AI Voice Calling Dashboard</title>
+    <meta name="description" content="Production-grade AI outbound voice calling platform with Gemini Live, campaign management, CRM, and real-time analytics.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        /* ═══════════════════════════════════════════════════════════════════
+           OutboundAI Design System — Dark Glassmorphism
+           Adapted from existing LIvekitAIVoice dashboard aesthetic
+           ═══════════════════════════════════════════════════════════════════ */
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #050507;
+            --bg-secondary: #0a0a0f;
+            --bg-card: rgba(12, 12, 20, 0.8);
+            --bg-card-hover: rgba(18, 18, 30, 0.9);
+            --bg-input: rgba(255, 255, 255, 0.04);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text-primary: #f0f0f5;
+            --text-secondary: #8888a0;
+            --text-muted: #555566;
+            --accent-blue: #4f8fff;
+            --accent-purple: #9b5de5;
+            --accent-pink: #f15bb5;
+            --accent-green: #00f5a0;
+            --accent-red: #ff4757;
+            --accent-amber: #ffc233;
+            --accent-teal: #00d2d3;
+            --gradient-primary: linear-gradient(135deg, #4f8fff, #9b5de5, #f15bb5);
+            --gradient-green: linear-gradient(135deg, #00f5a0, #00d2d3);
+            --gradient-amber: linear-gradient(135deg, #ffc233, #ff9f43);
+            --radius: 14px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+            --shadow-glow: 0 0 40px rgba(79, 143, 255, 0.08);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Ambient Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -20vh;
+            left: 15vw;
+            width: 60vh;
+            height: 60vh;
+            background: radial-gradient(circle, rgba(79, 143, 255, 0.12), transparent 70%);
+            border-radius: 50%;
+            filter: blur(80px);
+            animation: float 20s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -15vh;
+            right: 10vw;
+            width: 50vh;
+            height: 50vh;
+            background: radial-gradient(circle, rgba(155, 93, 229, 0.1), transparent 70%);
+            border-radius: 50%;
+            filter: blur(80px);
+            animation: float 25s ease-in-out infinite reverse;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) translateX(0); }
+            33% { transform: translateY(-20px) translateX(10px); }
+            66% { transform: translateY(15px) translateX(-15px); }
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Sidebar ───────────────────────────────────────────────── */
+        .sidebar {
+            width: 240px;
+            min-width: 240px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+            position: relative;
+        }
+        .sidebar-brand {
+            padding: 24px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .sidebar-brand h1 {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        .sidebar-brand h1 span {
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .sidebar-brand p {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .sidebar-nav {
+            flex: 1;
+            padding: 12px 10px;
+            overflow-y: auto;
+        }
+        .nav-section {
+            margin-bottom: 20px;
+        }
+        .nav-section-title {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            padding: 0 10px;
+            margin-bottom: 6px;
+        }
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border: 1px solid transparent;
+            user-select: none;
+        }
+        .nav-item:hover {
+            background: var(--bg-input);
+            color: var(--text-primary);
+        }
+        .nav-item.active {
+            background: rgba(79, 143, 255, 0.1);
+            color: var(--accent-blue);
+            border-color: rgba(79, 143, 255, 0.2);
+        }
+        .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+        .sidebar-status {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .status-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        /* ── Main Content ──────────────────────────────────────────── */
+        .main {
+            flex: 1;
+            height: 100vh;
+            overflow-y: auto;
+            position: relative;
+            z-index: 1;
+        }
+        .main-header {
+            padding: 20px 32px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+            background: rgba(5, 5, 7, 0.7);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        .main-header h2 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+        .main-header .subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .content { padding: 28px 32px; animation: fadeIn 0.4s ease; }
+
+        /* ── Cards ─────────────────────────────────────────────────── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            backdrop-filter: blur(20px);
+            transition: var(--transition);
+        }
+        .card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-glow); }
+        .card-title {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title svg { width: 16px; height: 16px; opacity: 0.7; }
+
+        /* ── Stat Cards ────────────────────────────────────────────── */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            transition: var(--transition);
+        }
+        .stat-card:hover { transform: translateY(-2px); border-color: var(--border-hover); box-shadow: var(--shadow-glow); }
+        .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 8px; }
+        .stat-value { font-size: 32px; font-weight: 800; letter-spacing: -1px; }
+        .stat-value.blue { color: var(--accent-blue); }
+        .stat-value.green { color: var(--accent-green); }
+        .stat-value.purple { color: var(--accent-purple); }
+        .stat-value.amber { color: var(--accent-amber); }
+        .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+        /* ── Form Elements ─────────────────────────────────────────── */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            letter-spacing: 0.3px;
+        }
+        input[type="text"], input[type="tel"], input[type="date"], input[type="time"],
+        input[type="number"], input[type="email"], input[type="password"],
+        select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: var(--font);
+            font-size: 13px;
+            outline: none;
+            transition: var(--transition);
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(79, 143, 255, 0.1);
+        }
+        textarea { resize: vertical; min-height: 100px; }
+        select { cursor: pointer; }
+        option { background: var(--bg-secondary); }
+
+        /* ── Buttons ───────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-family: var(--font);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            user-select: none;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn svg { width: 16px; height: 16px; }
+
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+            box-shadow: 0 4px 16px rgba(79, 143, 255, 0.25);
+        }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(79, 143, 255, 0.35); }
+
+        .btn-green {
+            background: var(--gradient-green);
+            color: #0a0a0f;
+            box-shadow: 0 4px 16px rgba(0, 245, 160, 0.2);
+        }
+        .btn-green:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0, 245, 160, 0.3); }
+
+        .btn-ghost {
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        .btn-ghost:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
+
+        .btn-danger {
+            background: rgba(255, 71, 87, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(255, 71, 87, 0.2);
+        }
+        .btn-danger:hover { background: rgba(255, 71, 87, 0.25); }
+
+        /* ── Grid Layouts ──────────────────────────────────────────── */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        .flex-gap { display: flex; gap: 12px; align-items: center; }
+
+        /* ── Tables ────────────────────────────────────────────────── */
+        .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border);
+        }
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+        /* ── Badges ────────────────────────────────────────────────── */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        .badge-green { background: rgba(0, 245, 160, 0.1); color: var(--accent-green); }
+        .badge-red { background: rgba(255, 71, 87, 0.1); color: var(--accent-red); }
+        .badge-blue { background: rgba(79, 143, 255, 0.1); color: var(--accent-blue); }
+        .badge-amber { background: rgba(255, 194, 51, 0.1); color: var(--accent-amber); }
+        .badge-purple { background: rgba(155, 93, 229, 0.1); color: var(--accent-purple); }
+
+        /* ── Toast ─────────────────────────────────────────────────── */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 500;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+            border: 1px solid;
+            backdrop-filter: blur(20px);
+            max-width: 400px;
+        }
+        .toast-success { background: rgba(0, 245, 160, 0.1); border-color: rgba(0, 245, 160, 0.3); color: var(--accent-green); }
+        .toast-error { background: rgba(255, 71, 87, 0.1); border-color: rgba(255, 71, 87, 0.3); color: var(--accent-red); }
+
+        /* ── Charts ────────────────────────────────────────────────── */
+        .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-top: 24px; }
+        .chart-container { position: relative; height: 260px; }
+
+        /* ── Section Panels ────────────────────────────────────────── */
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* ── Logs ──────────────────────────────────────────────────── */
+        .log-entry {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            display: flex;
+            gap: 12px;
+        }
+        .log-time { color: var(--text-muted); min-width: 140px; flex-shrink: 0; }
+        .log-level { min-width: 60px; flex-shrink: 0; font-weight: 600; text-transform: uppercase; }
+        .log-level.info { color: var(--accent-blue); }
+        .log-level.warning { color: var(--accent-amber); }
+        .log-level.error { color: var(--accent-red); }
+        .log-source { color: var(--accent-purple); min-width: 80px; }
+        .log-msg { color: var(--text-secondary); flex: 1; word-break: break-word; }
+
+        /* ── Spinner ───────────────────────────────────────────────── */
+        .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+
+        /* ── Empty State ───────────────────────────────────────────── */
+        .empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-muted);
+        }
+        .empty-state svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.3; }
+        .empty-state p { font-size: 14px; }
+
+        /* ── Responsive ────────────────────────────────────────────── */
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .grid-2, .grid-3, .charts-grid { grid-template-columns: 1fr; }
+            .content { padding: 16px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* ── Scrollbar ─────────────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SIDEBAR NAVIGATION
+     ═══════════════════════════════════════════════════════════════════════ -->
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <h1>Outbound<span>AI</span></h1>
+        <p>Voice Intelligence Platform</p>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section">
+            <div class="nav-section-title">Overview</div>
+            <div class="nav-item active" data-panel="dashboard" id="nav-dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                Dashboard
+            </div>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Calling</div>
+            <div class="nav-item" data-panel="single-call" id="nav-single-call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+                Single Call
+            </div>
+            <div class="nav-item" data-panel="batch" id="nav-batch">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                Batch / CSV
+            </div>
+            <div class="nav-item" data-panel="campaigns" id="nav-campaigns">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                Campaigns
+            </div>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Data</div>
+            <div class="nav-item" data-panel="appointments" id="nav-appointments">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Appointments
+            </div>
+            <div class="nav-item" data-panel="call-logs" id="nav-call-logs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Call Logs
+            </div>
+            <div class="nav-item" data-panel="crm" id="nav-crm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                CRM
+            </div>
+        </div>
+        <div class="nav-section">
+            <div class="nav-section-title">Config</div>
+            <div class="nav-item" data-panel="agents" id="nav-agents">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                Agent Profiles
+            </div>
+            <div class="nav-item" data-panel="prompt" id="nav-prompt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+                Prompt Editor
+            </div>
+            <div class="nav-item" data-panel="settings" id="nav-settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                Settings
+            </div>
+            <div class="nav-item" data-panel="logs" id="nav-logs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Live Logs
+            </div>
+        </div>
+    </nav>
+    <div class="sidebar-status">
+        <span class="status-dot"></span> System Online
+    </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="main">
+
+<!-- ── DASHBOARD ──────────────────────────────────────────────── -->
+<div class="panel active" id="panel-dashboard">
+    <div class="main-header">
+        <div><h2>Dashboard</h2><div class="subtitle">Real-time analytics & performance</div></div>
+        <button class="btn btn-ghost" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
+    <div class="content">
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="charts-grid">
+            <div class="card"><div class="card-title">Call Volume — Last 14 Days</div><div class="chart-container"><canvas id="chart-timeline"></canvas></div></div>
+            <div class="card"><div class="card-title">Outcome Distribution</div><div class="chart-container"><canvas id="chart-outcomes"></canvas></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ── SINGLE CALL ───────────────────────────────────────────── -->
+<div class="panel" id="panel-single-call">
+    <div class="main-header">
+        <div><h2>Single Call</h2><div class="subtitle">Deploy an AI agent to a single phone number</div></div>
+    </div>
+    <div class="content">
+        <div class="card" style="max-width:560px;">
+            <div class="card-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg> Deploy Agent</div>
+            <form id="single-call-form">
+                <div class="form-group"><label class="form-label">Phone Number</label><input type="tel" id="sc-phone" placeholder="+919876543210" required></div>
+                <div class="grid-2">
+                    <div class="form-group"><label class="form-label">Lead Name</label><input type="text" id="sc-name" placeholder="John Doe"></div>
+                    <div class="form-group"><label class="form-label">Service Type</label><input type="text" id="sc-service" placeholder="Consultation"></div>
+                </div>
+                <div class="form-group"><label class="form-label">Business Name</label><input type="text" id="sc-business" placeholder="Our Company"></div>
+                <div class="form-group"><label class="form-label">Agent Profile</label><select id="sc-profile"><option value="">Default</option></select></div>
+                <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+                    Initiate Call
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ── BATCH / CSV ────────────────────────────────────────────── -->
+<div class="panel" id="panel-batch">
+    <div class="main-header">
+        <div><h2>Batch / CSV</h2><div class="subtitle">Mass outbound calling from a list or CSV upload</div></div>
+    </div>
+    <div class="content">
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title">Paste Numbers</div>
+                <form id="batch-form">
+                    <div class="form-group"><label class="form-label">Phone Numbers (one per line or comma-separated)</label><textarea id="batch-numbers" rows="6" placeholder="+919876543210&#10;+919988776655"></textarea></div>
+                    <div class="form-group"><label class="form-label">Business Name</label><input type="text" id="batch-business" placeholder="Our Company"></div>
+                    <div class="form-group"><label class="form-label">Delay Between Calls (sec)</label><input type="number" id="batch-delay" value="3" min="1" max="60"></div>
+                    <button type="submit" class="btn btn-green" style="width:100%;">Launch Batch</button>
+                </form>
+                <div id="batch-results" style="margin-top:16px;"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">CSV Upload</div>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">Upload a CSV with columns: <code style="color:var(--accent-blue);">phone</code>, <code style="color:var(--accent-blue);">name</code> (optional)</p>
+                <form id="csv-form">
+                    <div class="form-group">
+                        <input type="file" id="csv-file" accept=".csv" style="padding:12px;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%;">Upload & Dispatch</button>
+                </form>
+                <div id="csv-results" style="margin-top:16px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── CAMPAIGNS ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-campaigns">
+    <div class="main-header">
+        <div><h2>Campaigns</h2><div class="subtitle">Scheduled mass calling with APScheduler</div></div>
+        <button class="btn btn-primary" onclick="showCampaignForm()">+ New Campaign</button>
+    </div>
+    <div class="content">
+        <div id="campaign-form-wrap" style="display:none;margin-bottom:24px;">
+            <div class="card">
+                <div class="card-title">Create Campaign</div>
+                <form id="campaign-form">
+                    <div class="grid-2">
+                        <div class="form-group"><label class="form-label">Campaign Name</label><input type="text" id="camp-name" required placeholder="Q3 Leads Follow-up"></div>
+                        <div class="form-group"><label class="form-label">Schedule Type</label><select id="camp-schedule"><option value="once">Once (Immediately)</option><option value="daily">Daily</option><option value="weekdays">Weekdays Only</option></select></div>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group"><label class="form-label">Schedule Time</label><input type="time" id="camp-time" value="09:00"></div>
+                        <div class="form-group"><label class="form-label">Call Delay (sec)</label><input type="number" id="camp-delay" value="3" min="1"></div>
+                        <div class="form-group"><label class="form-label">Agent Profile</label><select id="camp-profile"><option value="">Default</option></select></div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Contacts (JSON array or one number per line)</label><textarea id="camp-contacts" rows="4" placeholder='[{"phone": "+919876543210", "name": "John"}]'></textarea></div>
+                    <div class="form-group"><label class="form-label">Custom System Prompt (optional)</label><textarea id="camp-prompt" rows="3" placeholder="Leave empty to use default prompt"></textarea></div>
+                    <div class="flex-gap"><button type="submit" class="btn btn-green">Create Campaign</button><button type="button" class="btn btn-ghost" onclick="hideCampaignForm()">Cancel</button></div>
+                </form>
+            </div>
+        </div>
+        <div id="campaigns-list"></div>
+    </div>
+</div>
+
+<!-- ── APPOINTMENTS ───────────────────────────────────────────── -->
+<div class="panel" id="panel-appointments">
+    <div class="main-header">
+        <div><h2>Appointments</h2><div class="subtitle">All booked appointments from AI calls</div></div>
+        <div class="flex-gap"><input type="date" id="appt-date-filter" onchange="loadAppointments()"><button class="btn btn-ghost" onclick="document.getElementById('appt-date-filter').value='';loadAppointments()">Clear</button></div>
+    </div>
+    <div class="content"><div id="appointments-table"></div></div>
+</div>
+
+<!-- ── CALL LOGS ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-call-logs">
+    <div class="main-header">
+        <div><h2>Call Logs</h2><div class="subtitle">Complete call history with outcomes</div></div>
+        <div class="flex-gap"><button class="btn btn-ghost" id="calls-prev" onclick="loadCalls(-1)">← Prev</button><span id="calls-page" style="font-size:13px;color:var(--text-muted);">Page 1</span><button class="btn btn-ghost" id="calls-next" onclick="loadCalls(1)">Next →</button></div>
+    </div>
+    <div class="content"><div id="calls-table"></div></div>
+</div>
+
+<!-- ── CRM ────────────────────────────────────────────────────── -->
+<div class="panel" id="panel-crm">
+    <div class="main-header">
+        <div><h2>CRM</h2><div class="subtitle">Contact relationship management with AI memory</div></div>
+        <button class="btn btn-ghost" onclick="loadContacts()">↻ Refresh</button>
+    </div>
+    <div class="content"><div id="crm-table"></div><div id="crm-memory" style="margin-top:24px;"></div></div>
+</div>
+
+<!-- ── AGENT PROFILES ────────────────────────────────────────── -->
+<div class="panel" id="panel-agents">
+    <div class="main-header">
+        <div><h2>Agent Profiles</h2><div class="subtitle">Configure different AI personalities per campaign</div></div>
+        <button class="btn btn-primary" onclick="showProfileForm()">+ New Profile</button>
+    </div>
+    <div class="content">
+        <div id="profile-form-wrap" style="display:none;margin-bottom:24px;">
+            <div class="card">
+                <div class="card-title">Create Agent Profile</div>
+                <form id="profile-form">
+                    <div class="grid-2">
+                        <div class="form-group"><label class="form-label">Profile Name</label><input type="text" id="prof-name" required placeholder="Sales Bot v2"></div>
+                        <div class="form-group"><label class="form-label">Voice</label><select id="prof-voice"><option value="Aoede">Aoede</option><option value="Charon">Charon</option><option value="Fenrir">Fenrir</option><option value="Kore">Kore</option><option value="Puck">Puck</option></select></div>
+                    </div>
+                    <div class="form-group"><label class="form-label">Model</label><input type="text" id="prof-model" value="gemini-3.1-flash-live-preview"></div>
+                    <div class="form-group"><label class="form-label">System Prompt</label><textarea id="prof-prompt" rows="4" placeholder="Custom instructions for this agent..."></textarea></div>
+                    <div class="flex-gap"><button type="submit" class="btn btn-green">Save Profile</button><button type="button" class="btn btn-ghost" onclick="hideProfileForm()">Cancel</button></div>
+                </form>
+            </div>
+        </div>
+        <div id="profiles-list"></div>
+    </div>
+</div>
+
+<!-- ── PROMPT EDITOR ─────────────────────────────────────────── -->
+<div class="panel" id="panel-prompt">
+    <div class="main-header">
+        <div><h2>Prompt Editor</h2><div class="subtitle">Customize the AI agent's system instructions</div></div>
+    </div>
+    <div class="content">
+        <div class="card" style="max-width:800px;">
+            <div class="card-title">System Prompt</div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">Variables: <code style="color:var(--accent-blue);">{lead_name}</code> <code style="color:var(--accent-purple);">{business_name}</code> <code style="color:var(--accent-green);">{service_type}</code></p>
+            <textarea id="prompt-editor" rows="20" style="font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.6;"></textarea>
+            <div class="flex-gap" style="margin-top:16px;">
+                <button class="btn btn-primary" onclick="savePrompt()">Save Prompt</button>
+                <button class="btn btn-ghost" onclick="resetPrompt()">Reset to Default</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── SETTINGS ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-settings">
+    <div class="main-header">
+        <div><h2>Settings</h2><div class="subtitle">BYOK — Bring Your Own Keys</div></div>
+    </div>
+    <div class="content">
+        <div class="card" style="max-width:700px;">
+            <form id="settings-form"><div id="settings-fields"></div>
+                <button type="submit" class="btn btn-primary" style="margin-top:16px;">Save Settings</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ── LIVE LOGS ──────────────────────────────────────────────── -->
+<div class="panel" id="panel-logs">
+    <div class="main-header">
+        <div><h2>Live Logs</h2><div class="subtitle">System activity & error monitoring</div></div>
+        <div class="flex-gap">
+            <select id="log-level" onchange="loadLogs()" style="width:120px;"><option value="">All Levels</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select>
+            <button class="btn btn-ghost" onclick="loadLogs()">↻ Refresh</button>
+            <button class="btn btn-danger" onclick="clearLogs()">Clear All</button>
+        </div>
+    </div>
+    <div class="content"><div class="card" style="padding:0;max-height:70vh;overflow-y:auto;" id="logs-container"></div></div>
+</div>
+
+</div><!-- /main -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     JAVASCRIPT — All application logic
+     ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+const API = '';  // Same origin
+let callsPage = 1;
+let timelineChart = null;
+let outcomesChart = null;
+
+// ── Navigation ──────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
+    item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        item.classList.add('active');
+        const panelId = item.getAttribute('data-panel');
+        document.getElementById('panel-' + panelId).classList.add('active');
+        // Load data for panel
+        const loaders = {
+            'dashboard': loadDashboard,
+            'appointments': loadAppointments,
+            'call-logs': () => { callsPage = 1; loadCalls(0); },
+            'crm': loadContacts,
+            'campaigns': loadCampaigns,
+            'agents': loadProfiles,
+            'prompt': loadPrompt,
+            'settings': loadSettings,
+            'logs': loadLogs,
+            'single-call': loadProfileSelects,
+        };
+        if (loaders[panelId]) loaders[panelId]();
+    });
+});
+
+// ── Toast ───────────────────────────────────────────────────────────────
+function toast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+}
+
+// ── API helper ──────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+    try {
+        const res = await fetch(API + path, {
+            headers: { 'Content-Type': 'application/json', ...opts.headers },
+            ...opts,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.error || 'Request failed');
+        return data;
+    } catch (err) {
+        toast(err.message, 'error');
+        throw err;
+    }
+}
+
+// ── Outcome badge ───────────────────────────────────────────────────────
+function outcomeBadge(outcome) {
+    const map = {
+        booked: 'green', not_interested: 'red', wrong_number: 'amber',
+        voicemail: 'purple', no_answer: 'blue', callback_requested: 'amber',
+    };
+    return `<span class="badge badge-${map[outcome] || 'blue'}">${outcome || 'unknown'}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════
+async function loadDashboard() {
+    try {
+        const stats = await apiFetch('/api/stats');
+        document.getElementById('stats-grid').innerHTML = `
+            <div class="stat-card"><div class="stat-label">Total Calls</div><div class="stat-value blue">${stats.total_calls}</div></div>
+            <div class="stat-card"><div class="stat-label">Booked</div><div class="stat-value green">${stats.booked}</div><div class="stat-sub">${stats.booking_rate_percent}% booking rate</div></div>
+            <div class="stat-card"><div class="stat-label">Not Interested</div><div class="stat-value amber">${stats.not_interested}</div></div>
+            <div class="stat-card"><div class="stat-label">Avg Duration</div><div class="stat-value purple">${Math.round(stats.avg_duration_seconds)}s</div></div>
+        `;
+        // Timeline chart
+        const labels = (stats.timeline || []).map(t => t.date.slice(5));
+        const data = (stats.timeline || []).map(t => t.count);
+        if (timelineChart) timelineChart.destroy();
+        timelineChart = new Chart(document.getElementById('chart-timeline'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Calls',
+                    data,
+                    borderColor: '#4f8fff',
+                    backgroundColor: 'rgba(79,143,255,0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointBackgroundColor: '#4f8fff',
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#555566', font: { size: 10 } } },
+                    y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#555566', font: { size: 10 } }, beginAtZero: true },
+                }
+            }
+        });
+        // Outcomes chart
+        const outcomeLabels = Object.keys(stats.outcomes || {});
+        const outcomeData = Object.values(stats.outcomes || {});
+        const colors = ['#00f5a0', '#ff4757', '#ffc233', '#9b5de5', '#4f8fff', '#00d2d3'];
+        if (outcomesChart) outcomesChart.destroy();
+        outcomesChart = new Chart(document.getElementById('chart-outcomes'), {
+            type: 'doughnut',
+            data: {
+                labels: outcomeLabels,
+                datasets: [{ data: outcomeData, backgroundColor: colors.slice(0, outcomeLabels.length), borderWidth: 0 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom', labels: { color: '#8888a0', font: { size: 11 }, padding: 12 } } },
+                cutout: '65%',
+            }
+        });
+    } catch (err) { /* toast already shown */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SINGLE CALL
+// ═══════════════════════════════════════════════════════════════════════
+document.getElementById('single-call-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Dispatching...';
+    try {
+        await apiFetch('/api/call', {
+            method: 'POST',
+            body: JSON.stringify({
+                phone_number: document.getElementById('sc-phone').value,
+                lead_name: document.getElementById('sc-name').value || null,
+                business_name: document.getElementById('sc-business').value || null,
+                service_type: document.getElementById('sc-service').value || null,
+                agent_profile_id: document.getElementById('sc-profile').value || null,
+            }),
+        });
+        toast('Call dispatched successfully!');
+        document.getElementById('sc-phone').value = '';
+    } catch (err) { /* toast shown */ }
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg> Initiate Call';
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// BATCH
+// ═══════════════════════════════════════════════════════════════════════
+document.getElementById('batch-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Processing...';
+    const raw = document.getElementById('batch-numbers').value;
+    const numbers = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    try {
+        const data = await apiFetch('/api/batch', {
+            method: 'POST',
+            body: JSON.stringify({
+                numbers, business_name: document.getElementById('batch-business').value || null,
+                delay_seconds: parseInt(document.getElementById('batch-delay').value) || 3,
+            }),
+        });
+        let html = '<div style="font-size:13px;">';
+        (data.results || []).forEach(r => {
+            const icon = r.status === 'dispatched' ? '✅' : '❌';
+            html += `<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;"><span style="font-family:monospace;color:var(--text-secondary);">${r.phone_number}</span><span>${icon} ${r.status}</span></div>`;
+        });
+        html += '</div>';
+        document.getElementById('batch-results').innerHTML = html;
+        toast(`Batch complete: ${data.total} numbers processed`);
+    } catch (err) { /* toast shown */ }
+    btn.disabled = false; btn.textContent = 'Launch Batch';
+});
+
+document.getElementById('csv-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = document.getElementById('csv-file').files[0];
+    if (!file) { toast('Select a CSV file', 'error'); return; }
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Uploading...';
+    const form = new FormData();
+    form.append('file', file);
+    try {
+        const res = await fetch(API + '/api/batch/csv', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Upload failed');
+        toast(`CSV processed: ${data.total} contacts`);
+        let html = '<div style="font-size:13px;">';
+        (data.results || []).forEach(r => {
+            html += `<div style="padding:4px 0;">${r.status === 'dispatched' ? '✅' : '❌'} ${r.phone_number}</div>`;
+        });
+        html += '</div>';
+        document.getElementById('csv-results').innerHTML = html;
+    } catch (err) { toast(err.message, 'error'); }
+    btn.disabled = false; btn.textContent = 'Upload & Dispatch';
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// CAMPAIGNS
+// ═══════════════════════════════════════════════════════════════════════
+function showCampaignForm() { document.getElementById('campaign-form-wrap').style.display = 'block'; loadProfileSelects(); }
+function hideCampaignForm() { document.getElementById('campaign-form-wrap').style.display = 'none'; }
+
+document.getElementById('campaign-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    let contacts;
+    const raw = document.getElementById('camp-contacts').value.trim();
+    try { contacts = JSON.parse(raw); } catch { contacts = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean); }
+    try {
+        await apiFetch('/api/campaigns', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: document.getElementById('camp-name').value,
+                contacts,
+                schedule_type: document.getElementById('camp-schedule').value,
+                schedule_time: document.getElementById('camp-time').value,
+                call_delay_seconds: parseInt(document.getElementById('camp-delay').value) || 3,
+                system_prompt: document.getElementById('camp-prompt').value || null,
+                agent_profile_id: document.getElementById('camp-profile').value || null,
+            }),
+        });
+        toast('Campaign created!');
+        hideCampaignForm();
+        loadCampaigns();
+    } catch (err) { /* toast shown */ }
+});
+
+async function loadCampaigns() {
+    try {
+        const campaigns = await apiFetch('/api/campaigns');
+        if (!campaigns.length) {
+            document.getElementById('campaigns-list').innerHTML = '<div class="empty-state"><p>No campaigns yet. Create one to get started.</p></div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Status</th><th>Schedule</th><th>Contacts</th><th>Dispatched</th><th>Failed</th><th>Actions</th></tr></thead><tbody>';
+        campaigns.forEach(c => {
+            const contacts = JSON.parse(c.contacts_json || '[]');
+            const statusBadge = { active: 'green', running: 'blue', completed: 'purple', paused: 'amber' };
+            html += `<tr>
+                <td style="color:var(--text-primary);font-weight:500;">${c.name}</td>
+                <td><span class="badge badge-${statusBadge[c.status] || 'blue'}">${c.status}</span></td>
+                <td>${c.schedule_type} @ ${c.schedule_time || '—'}</td>
+                <td>${contacts.length}</td>
+                <td>${c.total_dispatched || 0}</td>
+                <td>${c.total_failed || 0}</td>
+                <td>
+                    <div class="flex-gap">
+                        <button class="btn btn-ghost" style="padding:6px 12px;font-size:11px;" onclick="runCampaign('${c.id}')">▶ Run</button>
+                        <button class="btn btn-danger" style="padding:6px 12px;font-size:11px;" onclick="deleteCampaign('${c.id}')">✕</button>
+                    </div>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('campaigns-list').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+async function runCampaign(id) { await apiFetch(`/api/campaigns/${id}/run`, { method: 'POST' }); toast('Campaign started!'); loadCampaigns(); }
+async function deleteCampaign(id) { if (!confirm('Delete this campaign?')) return; await apiFetch(`/api/campaigns/${id}`, { method: 'DELETE' }); toast('Campaign deleted'); loadCampaigns(); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// APPOINTMENTS
+// ═══════════════════════════════════════════════════════════════════════
+async function loadAppointments() {
+    const dateFilter = document.getElementById('appt-date-filter').value;
+    const url = dateFilter ? `/api/appointments?date=${dateFilter}` : '/api/appointments';
+    try {
+        const appts = await apiFetch(url);
+        if (!appts.length) {
+            document.getElementById('appointments-table').innerHTML = '<div class="empty-state"><p>No appointments found.</p></div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Date</th><th>Time</th><th>Service</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+        appts.forEach(a => {
+            html += `<tr>
+                <td style="color:var(--text-primary);font-weight:500;">${a.name}</td>
+                <td style="font-family:monospace;">${a.phone}</td>
+                <td>${a.date}</td>
+                <td>${a.time}</td>
+                <td>${a.service}</td>
+                <td><span class="badge badge-${a.status === 'booked' ? 'green' : 'red'}">${a.status}</span></td>
+                <td>${a.status === 'booked' ? `<button class="btn btn-danger" style="padding:4px 10px;font-size:11px;" onclick="cancelAppt('${a.id}')">Cancel</button>` : '—'}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('appointments-table').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+async function cancelAppt(id) { if (!confirm('Cancel this appointment?')) return; await apiFetch(`/api/appointments/${id}`, { method: 'DELETE' }); toast('Appointment cancelled'); loadAppointments(); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALL LOGS
+// ═══════════════════════════════════════════════════════════════════════
+async function loadCalls(dir = 0) {
+    callsPage = Math.max(1, callsPage + dir);
+    document.getElementById('calls-page').textContent = `Page ${callsPage}`;
+    try {
+        const calls = await apiFetch(`/api/calls?page=${callsPage}&limit=20`);
+        if (!calls.length) {
+            document.getElementById('calls-table').innerHTML = '<div class="empty-state"><p>No call logs yet.</p></div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr><th>Phone</th><th>Lead</th><th>Outcome</th><th>Reason</th><th>Duration</th><th>Time</th></tr></thead><tbody>';
+        calls.forEach(c => {
+            html += `<tr>
+                <td style="font-family:monospace;">${c.phone_number}</td>
+                <td>${c.lead_name || '—'}</td>
+                <td>${outcomeBadge(c.outcome)}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;">${c.reason || '—'}</td>
+                <td>${c.duration_seconds ? c.duration_seconds + 's' : '—'}</td>
+                <td style="white-space:nowrap;">${(c.timestamp || '').slice(0, 16).replace('T', ' ')}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('calls-table').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CRM
+// ═══════════════════════════════════════════════════════════════════════
+async function loadContacts() {
+    try {
+        const contacts = await apiFetch('/api/contacts');
+        if (!contacts.length) {
+            document.getElementById('crm-table').innerHTML = '<div class="empty-state"><p>No contacts yet. Make some calls first!</p></div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr><th>Phone</th><th>Name</th><th>Calls</th><th>Booked</th><th>Last Outcome</th><th>Last Call</th><th>Memory</th></tr></thead><tbody>';
+        contacts.forEach(c => {
+            html += `<tr>
+                <td style="font-family:monospace;">${c.phone_number}</td>
+                <td>${c.lead_name || '—'}</td>
+                <td>${c.total_calls}</td>
+                <td>${c.booked}</td>
+                <td>${outcomeBadge(c.last_outcome)}</td>
+                <td style="white-space:nowrap;">${(c.last_call || '').slice(0, 16).replace('T', ' ')}</td>
+                <td><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px;" onclick="showMemory('${c.phone_number}')">View</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('crm-table').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+async function showMemory(phone) {
+    try {
+        const memories = await apiFetch(`/api/contact/${encodeURIComponent(phone)}/memory`);
+        let html = `<div class="card"><div class="card-title">Memory — ${phone}</div>`;
+        if (!memories.length) {
+            html += '<p style="color:var(--text-muted);font-size:13px;">No memories stored for this contact.</p>';
+        } else {
+            memories.forEach(m => {
+                html += `<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--text-muted);font-size:11px;">${(m.created_at || '').slice(0, 16)}</span><br>${m.insight}</div>`;
+            });
+        }
+        html += '</div>';
+        document.getElementById('crm-memory').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AGENT PROFILES
+// ═══════════════════════════════════════════════════════════════════════
+function showProfileForm() { document.getElementById('profile-form-wrap').style.display = 'block'; }
+function hideProfileForm() { document.getElementById('profile-form-wrap').style.display = 'none'; }
+
+document.getElementById('profile-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await apiFetch('/api/agent-profiles', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: document.getElementById('prof-name').value,
+                voice: document.getElementById('prof-voice').value,
+                model: document.getElementById('prof-model').value,
+                system_prompt: document.getElementById('prof-prompt').value || null,
+            }),
+        });
+        toast('Profile created!');
+        hideProfileForm();
+        loadProfiles();
+    } catch (err) { /* toast shown */ }
+});
+
+async function loadProfiles() {
+    try {
+        const profiles = await apiFetch('/api/agent-profiles');
+        if (!profiles.length) {
+            document.getElementById('profiles-list').innerHTML = '<div class="empty-state"><p>No agent profiles. Create one to customize voice and behavior.</p></div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Voice</th><th>Model</th><th>Default</th><th>Actions</th></tr></thead><tbody>';
+        profiles.forEach(p => {
+            html += `<tr>
+                <td style="color:var(--text-primary);font-weight:500;">${p.name}</td>
+                <td>${p.voice}</td>
+                <td style="font-size:11px;font-family:monospace;">${p.model}</td>
+                <td>${p.is_default ? '<span class="badge badge-green">Default</span>' : `<button class="btn btn-ghost" style="padding:3px 8px;font-size:10px;" onclick="setDefaultProfile('${p.id}')">Set</button>`}</td>
+                <td><button class="btn btn-danger" style="padding:4px 10px;font-size:11px;" onclick="deleteProfile('${p.id}')">Delete</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('profiles-list').innerHTML = html;
+        // Also populate profile selects
+        populateProfileSelects(profiles);
+    } catch (err) { /* toast shown */ }
+}
+
+async function deleteProfile(id) { if (!confirm('Delete this profile?')) return; await apiFetch(`/api/agent-profiles/${id}`, { method: 'DELETE' }); toast('Profile deleted'); loadProfiles(); }
+async function setDefaultProfile(id) { await apiFetch(`/api/agent-profiles/${id}/default`, { method: 'POST' }); toast('Default profile updated'); loadProfiles(); }
+
+function populateProfileSelects(profiles) {
+    ['sc-profile', 'camp-profile'].forEach(selectId => {
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        const val = sel.value;
+        sel.innerHTML = '<option value="">Default</option>';
+        profiles.forEach(p => { sel.innerHTML += `<option value="${p.id}">${p.name} (${p.voice})</option>`; });
+        sel.value = val;
+    });
+}
+
+async function loadProfileSelects() {
+    try {
+        const profiles = await apiFetch('/api/agent-profiles');
+        populateProfileSelects(profiles);
+    } catch { /* silent */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROMPT EDITOR
+// ═══════════════════════════════════════════════════════════════════════
+async function loadPrompt() {
+    try {
+        const data = await apiFetch('/api/prompt');
+        document.getElementById('prompt-editor').value = data.prompt || '';
+    } catch (err) { /* toast shown */ }
+}
+
+async function savePrompt() {
+    try {
+        await apiFetch('/api/prompt', { method: 'POST', body: JSON.stringify({ prompt: document.getElementById('prompt-editor').value }) });
+        toast('Prompt saved!');
+    } catch (err) { /* toast shown */ }
+}
+
+function resetPrompt() {
+    if (!confirm('Reset to default prompt? This will discard your customizations.')) return;
+    apiFetch('/api/prompt', { method: 'POST', body: JSON.stringify({ prompt: '' }) }).then(() => { loadPrompt(); toast('Prompt reset to default'); });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════════════════
+const SETTINGS_SECTIONS = {
+    'LiveKit': ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'],
+    'Google Gemini': ['GOOGLE_API_KEY', 'GEMINI_MODEL', 'GEMINI_TTS_VOICE', 'USE_GEMINI_REALTIME'],
+    'Vobiz SIP': ['VOBIZ_SIP_DOMAIN', 'VOBIZ_USERNAME', 'VOBIZ_PASSWORD', 'VOBIZ_OUTBOUND_NUMBER', 'OUTBOUND_TRUNK_ID', 'DEFAULT_TRANSFER_NUMBER'],
+    'Deepgram': ['DEEPGRAM_API_KEY'],
+    'Twilio SMS': ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER'],
+    'S3 Storage': ['S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'S3_ENDPOINT_URL', 'S3_REGION', 'S3_BUCKET'],
+    'Cal.com': ['CALCOM_API_KEY', 'CALCOM_EVENT_TYPE_ID', 'CALCOM_TIMEZONE'],
+};
+
+const SENSITIVE = new Set(['LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'GOOGLE_API_KEY', 'VOBIZ_PASSWORD', 'TWILIO_AUTH_TOKEN', 'SUPABASE_SERVICE_KEY', 'S3_SECRET_ACCESS_KEY', 'CALCOM_API_KEY', 'DEEPGRAM_API_KEY']);
+
+async function loadSettings() {
+    try {
+        const settings = await apiFetch('/api/settings');
+        let html = '';
+        for (const [section, keys] of Object.entries(SETTINGS_SECTIONS)) {
+            html += `<div style="margin-bottom:24px;"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent-purple);margin-bottom:12px;">${section}</div>`;
+            keys.forEach(k => {
+                const s = settings[k] || {};
+                const isSensitive = SENSITIVE.has(k);
+                const val = isSensitive ? '' : (s.value || '');
+                const configured = s.configured;
+                const statusDot = configured ? '<span style="color:var(--accent-green);font-size:10px;">● Configured</span>' : '<span style="color:var(--text-muted);font-size:10px;">○ Not set</span>';
+                html += `<div class="form-group"><label class="form-label">${k} ${statusDot}</label><input type="${isSensitive ? 'password' : 'text'}" name="${k}" value="${val}" placeholder="${isSensitive ? '••••••••' : 'Not configured'}"></div>`;
+            });
+            html += '</div>';
+        }
+        document.getElementById('settings-fields').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+document.getElementById('settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = {};
+    for (const [k, v] of formData.entries()) { if (v) data[k] = v; }
+    try {
+        await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) });
+        toast('Settings saved!');
+    } catch (err) { /* toast shown */ }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// LIVE LOGS
+// ═══════════════════════════════════════════════════════════════════════
+async function loadLogs() {
+    const level = document.getElementById('log-level').value;
+    const url = `/api/logs?limit=200${level ? '&level=' + level : ''}`;
+    try {
+        const logs = await apiFetch(url);
+        if (!logs.length) {
+            document.getElementById('logs-container').innerHTML = '<div class="empty-state"><p>No logs yet.</p></div>';
+            return;
+        }
+        let html = '';
+        logs.forEach(l => {
+            html += `<div class="log-entry">
+                <span class="log-time">${(l.timestamp || '').slice(0, 19).replace('T', ' ')}</span>
+                <span class="log-level ${l.level}">${l.level}</span>
+                <span class="log-source">${l.source}</span>
+                <span class="log-msg">${l.message}${l.detail ? ' — ' + l.detail : ''}</span>
+            </div>`;
+        });
+        document.getElementById('logs-container').innerHTML = html;
+    } catch (err) { /* toast shown */ }
+}
+
+async function clearLogs() {
+    if (!confirm('Clear all logs?')) return;
+    await apiFetch('/api/logs', { method: 'DELETE' });
+    toast('Logs cleared');
+    loadLogs();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════
+loadDashboard();
+</script>
+</body>
+</html>
