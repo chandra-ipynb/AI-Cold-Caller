@@ -366,7 +366,11 @@ async def api_batch_csv(file: UploadFile = File(...)):
 
 @app.get("/api/appointments")
 async def api_get_appointments(date: Optional[str] = None):
-    return await get_all_appointments(date_filter=date)
+    try:
+        return await get_all_appointments(date_filter=date)
+    except Exception as exc:
+        logger.error(f"Failed to get appointments: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.post("/api/appointments")
@@ -387,7 +391,11 @@ async def api_cancel_appointment(appointment_id: str):
 
 @app.get("/api/calls")
 async def api_get_calls(page: int = 1, limit: int = 20):
-    return await get_all_calls(page=page, limit=limit)
+    try:
+        return await get_all_calls(page=page, limit=limit)
+    except Exception as exc:
+        logger.error(f"Failed to get calls: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/calls/{phone}")
@@ -408,26 +416,47 @@ async def api_update_notes(call_id: str, body: dict):
 
 @app.get("/api/contacts")
 async def api_get_contacts():
-    return await get_contacts()
+    try:
+        return await get_contacts()
+    except Exception as exc:
+        logger.error(f"Failed to get contacts: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.get("/api/contact/{phone}/memory")
 async def api_get_contact_memory(phone: str):
-    return await get_contact_memory(phone)
+    try:
+        return await get_contact_memory(phone)
+    except Exception as exc:
+        logger.error(f"Failed to get contact memory: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 # ── Stats ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/stats")
 async def api_get_stats():
-    return await get_stats()
+    try:
+        return await get_stats()
+    except Exception as exc:
+        logger.error(f"Failed to get stats: {exc}")
+        return JSONResponse({
+            "total_calls": 0, "booked": 0, "not_interested": 0,
+            "booking_rate_percent": 0, "avg_duration_seconds": 0,
+            "timeline": [], "outcomes": {},
+            "error": str(exc)
+        }, status_code=200)
 
 
 # ── Campaign endpoints ───────────────────────────────────────────────────────
 
 @app.get("/api/campaigns")
 async def api_get_campaigns():
-    return await get_all_campaigns()
+    try:
+        return await get_all_campaigns()
+    except Exception as exc:
+        logger.error(f"Failed to get campaigns: {exc}")
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 @app.post("/api/campaigns")
@@ -481,7 +510,11 @@ async def api_delete_campaign(campaign_id: str):
 
 @app.get("/api/settings")
 async def api_get_settings():
-    return await get_all_settings()
+    try:
+        return await get_all_settings()
+    except Exception as exc:
+        logger.error(f"Failed to get settings: {exc}")
+        return JSONResponse({}, status_code=200)
 
 
 @app.post("/api/settings")
@@ -494,8 +527,12 @@ async def api_save_settings(body: dict):
 
 @app.get("/api/prompt")
 async def api_get_prompt():
-    custom = await get_setting("SYSTEM_PROMPT", "")
-    return {"prompt": custom if custom else DEFAULT_SYSTEM_PROMPT, "is_custom": bool(custom)}
+    try:
+        custom = await get_setting("SYSTEM_PROMPT", "")
+        return {"prompt": custom if custom else DEFAULT_SYSTEM_PROMPT, "is_custom": bool(custom)}
+    except Exception as exc:
+        logger.error(f"Failed to get prompt: {exc}")
+        return {"prompt": DEFAULT_SYSTEM_PROMPT, "is_custom": False}
 
 
 @app.post("/api/prompt")
@@ -510,7 +547,11 @@ async def api_save_prompt(body: dict):
 
 @app.get("/api/agent-profiles")
 async def api_get_profiles():
-    return await get_all_agent_profiles()
+    try:
+        return await get_all_agent_profiles()
+    except Exception as exc:
+        logger.error(f"Failed to get profiles: {exc}")
+        return JSONResponse([], status_code=200)
 
 
 @app.get("/api/agent-profiles/{profile_id}")
@@ -561,7 +602,11 @@ async def api_get_logs(
     source: Optional[str] = None,
     limit: int = 200,
 ):
-    return await get_logs(level=level, source=source, limit=limit)
+    try:
+        return await get_logs(level=level, source=source, limit=limit)
+    except Exception as exc:
+        logger.error(f"Failed to get logs: {exc}")
+        return JSONResponse([], status_code=200)
 
 
 @app.delete("/api/logs")
