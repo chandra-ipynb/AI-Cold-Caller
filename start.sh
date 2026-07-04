@@ -5,7 +5,9 @@ cd "$(dirname "$0")"
 echo "🚀 Starting Outbound Mass Caller..."
 
 if [ -f ".env" ]; then
-    export $(cat .env | grep -v '^#' | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 echo "📋 Configuration:"
