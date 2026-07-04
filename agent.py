@@ -106,7 +106,7 @@ def _build_session(
 ) -> AgentSession:
     """
     Build an AgentSession configured for Gemini Live realtime (preferred)
-    or fallback to pipeline mode (Deepgram STT + Google LLM + Google TTS).
+    or fallback to pipeline mode (Google LLM + Google TTS, optional Deepgram STT).
     """
     voice = voice or os.getenv("GEMINI_TTS_VOICE", "Aoede")
     model = model or os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
@@ -118,14 +118,13 @@ def _build_session(
         RealtimeModel = _google_realtime or _google_beta_realtime
         if RealtimeModel:
             try:
+                # NOTE: tools are NOT passed to RealtimeModel — they go to the Agent.
                 realtime_model = RealtimeModel(
                     model=model,
                     voice=voice,
                     api_key=api_key,
-                    tools=tools,
                 )
                 session = AgentSession(
-                    vad=silero.VAD.load(),
                     llm=realtime_model,
                 )
                 logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}")
@@ -133,22 +132,32 @@ def _build_session(
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
 
-    # Fallback: pipeline mode (Deepgram STT → Google LLM → Google TTS)
+    # Fallback: pipeline mode (optional Deepgram STT → Google LLM → Google TTS)
     logger.info("Using pipeline mode (STT + LLM + TTS)")
     stt = None
-    if _deepgram_stt:
-        stt = _deepgram_stt(model="nova-2", language="en")
+    if _deepgram_stt and os.getenv("DEEPGRAM_API_KEY"):
+        try:
+            stt = _deepgram_stt(model="nova-2", language="en")
+            logger.info("Pipeline STT: Deepgram nova-2")
+        except Exception as exc:
+            logger.warning(f"Deepgram STT init failed: {exc}")
+    else:
+        logger.info("Pipeline STT: skipped (no Deepgram key — Gemini LLM will handle)")
 
     llm_instance = None
     if _google_llm:
         llm_instance = _google_llm(model="gemini-2.0-flash", api_key=api_key)
+        logger.info("Pipeline LLM: Google gemini-2.0-flash")
 
     tts = None
     if _google_tts:
         tts = _google_tts(voice=voice, api_key=api_key)
+        logger.info(f"Pipeline TTS: Google voice={voice}")
+
+    if not llm_instance:
+        raise ValueError("No LLM configured — need either Gemini Realtime or Google LLM with GOOGLE_API_KEY")
 
     session = AgentSession(
-        vad=silero.VAD.load(),
         stt=stt,
         llm=llm_instance,
         tts=tts,
@@ -303,7 +312,6 @@ async def entrypoint(ctx: agents.JobContext):
                 tools=list(fnc_ctx.function_tools.values()),
             ),
             room_input_options=RoomInputOptions(
-                noise_cancellation=noise_cancellation.BVCTelephony(),
                 close_on_disconnect=True,
             ),
         )
