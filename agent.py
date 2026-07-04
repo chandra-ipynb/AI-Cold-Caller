@@ -176,48 +176,65 @@ class OutboundAgent(Agent):
 async def entrypoint(ctx: agents.JobContext):
     """
     Main entrypoint for the LiveKit agent worker.
-
-    For outbound calls (adapted from existing LIvekitAIVoice agent.py):
-    1. Parses phone_number and config from job/room metadata
-    2. Connects to the room
-    3. Optionally loads an agent profile from Supabase
-    4. Initiates the SIP call via create_sip_participant
-    5. Starts the AI session with Gemini Live
     """
-    logger.info(f"Connecting to room: {ctx.room.name}")
+    logger.info("=" * 60)
+    logger.info("ENTRYPOINT CALLED — new agent job received")
+    logger.info(f"  Room: {ctx.room.name}")
+    logger.info(f"  Job ID: {ctx.job.id if hasattr(ctx.job, 'id') else 'N/A'}")
+    logger.info("=" * 60)
 
-    # ── Parse metadata (reused from existing agent.py pattern) ──────────
+    # ── STEP 1: Connect to room ──────────────────────────────────────
+    logger.info("[STEP 1] Connecting to LiveKit room...")
+    await ctx.connect()
+    logger.info(f"[STEP 1] ✅ Connected to room: {ctx.room.name}")
+    logger.info(f"[STEP 1]   Remote participants: {len(ctx.room.remote_participants)}")
+    for pid, p in ctx.room.remote_participants.items():
+        logger.info(f"[STEP 1]   - Participant: {p.identity} (sid={p.sid})")
+
+    # ── STEP 2: Parse metadata ───────────────────────────────────────
+    logger.info("[STEP 2] Parsing metadata...")
     phone_number = None
     lead_name = None
     config_dict = {}
 
-    # Check Job Metadata (Legacy/Dispatch)
+    # Check Job Metadata
+    raw_job_meta = getattr(ctx.job, 'metadata', None) or ""
+    logger.info(f"[STEP 2]   Job metadata raw: {raw_job_meta[:200] if raw_job_meta else 'EMPTY'}")
     try:
-        if ctx.job.metadata:
-            data = json.loads(ctx.job.metadata)
+        if raw_job_meta:
+            data = json.loads(raw_job_meta)
             phone_number = data.get("phone_number")
             lead_name = data.get("lead_name")
             config_dict = data
-    except Exception:
-        pass
+            logger.info(f"[STEP 2]   Parsed from job: phone={phone_number}, lead={lead_name}")
+    except Exception as exc:
+        logger.warning(f"[STEP 2]   Failed to parse job metadata: {exc}")
 
-    # Check Room Metadata (Dashboard/API) — overrides Job Metadata if present
+    # Check Room Metadata
+    raw_room_meta = ctx.room.metadata or ""
+    logger.info(f"[STEP 2]   Room metadata raw: {raw_room_meta[:200] if raw_room_meta else 'EMPTY'}")
     try:
-        if ctx.room.metadata:
-            data = json.loads(ctx.room.metadata)
+        if raw_room_meta:
+            data = json.loads(raw_room_meta)
             if data.get("phone_number"):
                 phone_number = data.get("phone_number")
             if data.get("lead_name"):
                 lead_name = data.get("lead_name")
             config_dict.update(data)
-    except Exception:
-        logger.warning("No valid JSON metadata found in Room.")
+            logger.info(f"[STEP 2]   Parsed from room: phone={phone_number}, lead={lead_name}")
+    except Exception as exc:
+        logger.warning(f"[STEP 2]   Failed to parse room metadata: {exc}")
 
-    await _log("info", f"Call starting — phone={phone_number}, lead={lead_name}")
+    logger.info(f"[STEP 2] ✅ Final: phone={phone_number}, lead={lead_name}")
+    logger.info(f"[STEP 2]   Full config: {json.dumps(config_dict, default=str)[:500]}")
 
-    # ── Load agent profile if specified ──────────────────────────────────
+    if not phone_number:
+        logger.error("[STEP 2] ❌ NO PHONE NUMBER FOUND — agent cannot dial out!")
+        await _log("error", "No phone_number in metadata — cannot make call")
+
+    # ── STEP 3: Load agent profile ───────────────────────────────────
+    logger.info("[STEP 3] Loading agent profile...")
     profile_id = config_dict.get("agent_profile_id")
-    profile = None
     custom_prompt = config_dict.get("system_prompt")
     voice = config_dict.get("voice")
     model = config_dict.get("model")
@@ -234,9 +251,11 @@ async def entrypoint(ctx: agents.JobContext):
                     enabled_tools_list = json.loads(profile.get("enabled_tools", "[]"))
                 except Exception:
                     pass
-                logger.info(f"Loaded agent profile: {profile.get('name')}")
+                logger.info(f"[STEP 3] ✅ Loaded profile: {profile.get('name')}, voice={voice}")
         except Exception as exc:
-            logger.warning(f"Failed to load agent profile {profile_id}: {exc}")
+            logger.warning(f"[STEP 3]   Failed to load profile {profile_id}: {exc}")
+    else:
+        logger.info("[STEP 3]   No profile_id specified, using defaults")
 
     if not enabled_tools_list:
         try:
@@ -244,62 +263,92 @@ async def entrypoint(ctx: agents.JobContext):
         except Exception:
             enabled_tools_list = []
 
-    # ── Build prompt ─────────────────────────────────────────────────────
+    # ── STEP 4: Build prompt ─────────────────────────────────────────
+    logger.info("[STEP 4] Building system prompt...")
     system_prompt = build_prompt(
         lead_name=lead_name or config_dict.get("lead_name", "there"),
         business_name=config_dict.get("business_name", "our company"),
         service_type=config_dict.get("service_type", "our service"),
         custom_prompt=custom_prompt,
     )
+    logger.info(f"[STEP 4] ✅ Prompt length: {len(system_prompt)} chars")
 
-    # ── Initialize tools ─────────────────────────────────────────────────
+    # ── STEP 5: Initialize tools ─────────────────────────────────────
+    logger.info("[STEP 5] Initializing tools...")
     fnc_ctx = AppointmentTools(ctx, phone_number, lead_name)
     tool_methods = fnc_ctx.build_tool_list(enabled_tools_list)
+    logger.info(f"[STEP 5] ✅ {len(tool_methods)} tools loaded")
 
-    # ── Build session ────────────────────────────────────────────────────
-    session = _build_session(
-        tools=tool_methods,
-        voice=voice,
-        model=model,
-    )
+    # ── STEP 6: Build AI session ─────────────────────────────────────
+    logger.info("[STEP 6] Building AI session (Gemini Live)...")
+    try:
+        session = _build_session(
+            tools=tool_methods,
+            voice=voice,
+            model=model,
+        )
+        logger.info("[STEP 6] ✅ AI session built successfully")
+    except Exception as exc:
+        logger.error(f"[STEP 6] ❌ Failed to build AI session: {exc}")
+        await _log("error", f"AI session build failed: {exc}")
+        return
 
-    # ── Start session ────────────────────────────────────────────────────
-    await session.start(
-        room=ctx.room,
-        agent=OutboundAgent(
-            instructions=system_prompt,
-            tools=list(fnc_ctx.function_tools.values()),
-        ),
-        room_input_options=RoomInputOptions(
-            noise_cancellation=noise_cancellation.BVCTelephony(),
-            close_on_disconnect=True,
-        ),
-    )
+    # ── STEP 7: Start session ────────────────────────────────────────
+    logger.info("[STEP 7] Starting agent session in room...")
+    try:
+        await session.start(
+            room=ctx.room,
+            agent=OutboundAgent(
+                instructions=system_prompt,
+                tools=list(fnc_ctx.function_tools.values()),
+            ),
+            room_input_options=RoomInputOptions(
+                noise_cancellation=noise_cancellation.BVCTelephony(),
+                close_on_disconnect=True,
+            ),
+        )
+        logger.info("[STEP 7] ✅ Agent session started in room")
+    except Exception as exc:
+        logger.error(f"[STEP 7] ❌ Failed to start session: {exc}", exc_info=True)
+        await _log("error", f"Session start failed: {exc}")
+        return
 
-    # ── Dial out if needed (reused from existing agent.py) ───────────────
+    # ── STEP 8: Determine if we need to dial out ─────────────────────
+    logger.info("[STEP 8] Checking if SIP dial-out is needed...")
     should_dial = False
     if phone_number:
         user_already_here = False
         for p in ctx.room.remote_participants.values():
+            logger.info(f"[STEP 8]   Checking participant: {p.identity}")
             if f"sip_{phone_number}" in p.identity or "sip_" in p.identity:
                 user_already_here = True
                 break
 
         if not user_already_here:
             should_dial = True
-            logger.info("User not in room. Agent will initiate dial-out.")
+            logger.info("[STEP 8] → Will dial out (user not in room yet)")
         else:
-            logger.info("User already in room (Dashboard dispatched). Generating greeting.")
+            logger.info("[STEP 8] → User already in room, will greet directly")
+    else:
+        logger.warning("[STEP 8] ⚠️ No phone number — skipping dial-out")
 
+    # ── STEP 9: Dial out or greet ────────────────────────────────────
     if should_dial:
         trunk_id = os.getenv("OUTBOUND_TRUNK_ID", "")
+        logger.info(f"[STEP 9] SIP Dial-out starting...")
+        logger.info(f"[STEP 9]   Phone: {phone_number}")
+        logger.info(f"[STEP 9]   Trunk ID: {trunk_id}")
+        logger.info(f"[STEP 9]   Room: {ctx.room.name}")
+        logger.info(f"[STEP 9]   SIP Domain: {os.getenv('VOBIZ_SIP_DOMAIN', 'NOT SET')}")
+
         if not trunk_id:
+            logger.error("[STEP 9] ❌ OUTBOUND_TRUNK_ID not set — cannot dial!")
             await _log("error", "OUTBOUND_TRUNK_ID not set — cannot dial out")
             return
 
-        logger.info(f"Initiating outbound SIP call to {phone_number}...")
         try:
-            await ctx.api.sip.create_sip_participant(
+            logger.info("[STEP 9] Calling create_sip_participant...")
+            result = await ctx.api.sip.create_sip_participant(
                 api.CreateSIPParticipantRequest(
                     room_name=ctx.room.name,
                     sip_trunk_id=trunk_id,
@@ -308,23 +357,32 @@ async def entrypoint(ctx: agents.JobContext):
                     wait_until_answered=True,
                 )
             )
-            logger.info("Call answered! Agent is now listening.")
+            logger.info(f"[STEP 9] ✅ SIP call connected! Result: {result}")
             await _log("info", f"Call connected to {phone_number}")
 
-            # Speak first — critical for outbound calls
+            # Speak first
+            logger.info("[STEP 9] Generating opening greeting...")
             await session.generate_reply(
                 instructions="The call has just connected. Speak immediately — introduce yourself and confirm identity."
             )
+            logger.info("[STEP 9] ✅ Greeting sent")
         except Exception as e:
-            await _log("error", f"Failed to place outbound call to {phone_number}: {e}")
-            logger.error(f"Failed to place outbound call: {e}")
+            logger.error(f"[STEP 9] ❌ SIP dial-out FAILED: {e}", exc_info=True)
+            await _log("error", f"Failed to place outbound call to {phone_number}: {e}", str(e))
             ctx.shutdown()
     else:
-        # Inbound or Dashboard-dispatched call — greet immediately
-        logger.info("Generating initial greeting...")
+        if phone_number:
+            logger.info("[STEP 9] Generating greeting for existing participant...")
+        else:
+            logger.info("[STEP 9] No phone number, generating default greeting...")
         await session.generate_reply(
             instructions="The call is connected. Greet the user immediately."
         )
+        logger.info("[STEP 9] ✅ Greeting sent")
+
+    logger.info("=" * 60)
+    logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
