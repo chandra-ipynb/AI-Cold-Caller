@@ -311,11 +311,26 @@ async def entrypoint(ctx: agents.JobContext):
     )
     logger.info(f"[STEP 4] ✅ Prompt length: {len(system_prompt)} chars")
 
-    # ── STEP 5: Initialize tools ─────────────────────────────────────
+    # ── STEP 5: Initialize tools ───────────────────────────────────
     logger.info("[STEP 5] Initializing tools...")
     fnc_ctx = AppointmentTools(ctx, phone_number, lead_name)
     tool_methods = fnc_ctx.build_tool_list(enabled_tools_list)
     logger.info(f"[STEP 5] ✅ {len(tool_methods)} tools loaded")
+
+    # Pre-fetch contact history so Gemini has it in the prompt (no tool call needed)
+    contact_context = ""
+    if phone_number:
+        try:
+            history = await fnc_ctx.lookup_contact(phone=phone_number)
+            if history and "No history" not in history:
+                contact_context = f"\n\n━━━ CONTACT HISTORY ━━━\n{history}"
+                logger.info(f"[STEP 5] Pre-fetched contact history ({len(history)} chars)")
+        except Exception as exc:
+            logger.warning(f"[STEP 5] Could not pre-fetch contact history: {exc}")
+
+    # Append contact history to the system prompt
+    if contact_context:
+        system_prompt += contact_context
 
     # ── STEP 6: Build AI session ─────────────────────────────────────
     # Build BEFORE dialing so the session is warm when the call connects
@@ -336,9 +351,20 @@ async def entrypoint(ctx: agents.JobContext):
     # ── STEP 7: Start session (before dial — warm up Gemini) ─────────
     logger.info("[STEP 7] Starting agent session in room...")
     try:
+        # For Gemini Realtime, only pass end_call tool to avoid blocking tool calls
+        realtime_tools = []
+        if is_realtime:
+            for t in list(fnc_ctx.function_tools.values()):
+                tool_name = getattr(t, 'name', '') or getattr(t, '__name__', '') or str(t)
+                if 'end_call' in str(tool_name):
+                    realtime_tools.append(t)
+            logger.info(f"[STEP 7] Realtime mode: using {len(realtime_tools)} essential tools (end_call only)")
+        else:
+            realtime_tools = list(fnc_ctx.function_tools.values())
+
         my_agent = OutboundAgent(
             instructions=system_prompt,
-            tools=list(fnc_ctx.function_tools.values()),
+            tools=realtime_tools,
         )
         await session.start(
             room=ctx.room,
