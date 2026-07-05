@@ -131,12 +131,26 @@ def _build_session(
                     voice=voice,
                     api_key=api_key,
                 )
-                # We do not use TTS for Gemini Realtime anymore, we kickstart it via chat context.
+                # Add a Google TTS for instant first greeting via session.say()
+                # After the greeting, Gemini Realtime handles all audio natively
+                tts_for_greeting = None
+                if _google_tts:
+                    for tts_kwargs in [
+                        {"voice_name": "en-IN-Standard-A"},  # Indian English female
+                        {"voice_name": "en-US-Standard-H"},  # fallback US English
+                        {},                                   # bare defaults
+                    ]:
+                        try:
+                            tts_for_greeting = _google_tts(**tts_kwargs)
+                            logger.info(f"TTS for greeting initialized: {tts_kwargs}")
+                            break
+                        except Exception:
+                            continue
                 session = AgentSession(
                     llm=realtime_model,
-                    tts=None,
+                    tts=tts_for_greeting,
                 )
-                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}")
+                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'no'}")
                 return session, True
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
@@ -377,14 +391,20 @@ async def entrypoint(ctx: agents.JobContext):
             ctx.shutdown()
             return
 
-    # ── STEP 9: Trigger greeting (Gemini is already warm → fast) ─────
+    # ── STEP 9: Instant greeting via TTS (< 1 second) ────────────────
     try:
-        greeting = f"Say: Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Say: Hi there, do you have a moment?"
-        logger.info(f"[STEP 9] Triggering greeting...")
-        await session.generate_reply(instructions=greeting)
+        greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
+        logger.info(f"[STEP 9] Sending instant greeting: {greeting}")
+        await session.say(greeting, allow_interruptions=True)
         logger.info("[STEP 9] ✅ Greeting sent")
     except Exception as exc:
-        logger.warning(f"[STEP 9] generate_reply failed: {exc}")
+        logger.warning(f"[STEP 9] session.say() failed, trying generate_reply: {exc}")
+        try:
+            await session.generate_reply(
+                instructions=f"Say: Hi, am I speaking with {lead_name}?"
+            )
+        except Exception as exc2:
+            logger.warning(f"[STEP 9] generate_reply also failed: {exc2}")
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
