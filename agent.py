@@ -125,10 +125,16 @@ def _build_session(
                     voice=voice,
                     api_key=api_key,
                 )
+                # Add a TTS so session.say() works for the first greeting.
+                # After the greeting, Gemini Realtime handles everything.
+                tts_for_greeting = None
+                if _google_tts:
+                    tts_for_greeting = _google_tts(voice=voice, api_key=api_key)
                 session = AgentSession(
                     llm=realtime_model,
+                    tts=tts_for_greeting,
                 )
-                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}")
+                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'no'}")
                 return session, True
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
@@ -375,31 +381,30 @@ async def entrypoint(ctx: agents.JobContext):
             ctx.shutdown()
             return
 
-        # Greeting — for Realtime mode, the agent auto-speaks from instructions.
-        # For pipeline mode, use generate_reply().
-        if not is_realtime:
-            try:
-                logger.info("[STEP 9] Sending greeting via generate_reply (pipeline mode)...")
-                await session.generate_reply(
-                    instructions="The call has just connected. Speak immediately — introduce yourself."
-                )
-                logger.info("[STEP 9] ✅ Greeting sent")
-            except Exception as exc:
-                logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
-        else:
-            logger.info("[STEP 9] Realtime mode — agent will auto-greet from instructions")
+        # Speak the greeting immediately using session.say()
+        try:
+            greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! This is a quick call — do you have a moment?"
+            logger.info(f"[STEP 9] Sending greeting: {greeting}")
+            await session.say(greeting, allow_interruptions=True)
+            logger.info("[STEP 9] ✅ Greeting sent")
+        except Exception as exc:
+            logger.warning(f"[STEP 9] Greeting via say() failed (non-fatal): {exc}")
+            # Fallback: try generate_reply for pipeline mode
+            if not is_realtime:
+                try:
+                    await session.generate_reply(
+                        instructions="The call has just connected. Speak immediately — introduce yourself."
+                    )
+                except Exception:
+                    pass
     else:
-        if not is_realtime:
-            try:
-                logger.info("[STEP 9] Sending greeting via generate_reply (pipeline mode)...")
-                await session.generate_reply(
-                    instructions="The call is connected. Greet the user immediately."
-                )
-                logger.info("[STEP 9] ✅ Greeting sent")
-            except Exception as exc:
-                logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
-        else:
-            logger.info("[STEP 9] Realtime mode — agent will auto-greet from instructions")
+        try:
+            greeting = "Hello! How can I help you today?"
+            logger.info(f"[STEP 9] Sending greeting: {greeting}")
+            await session.say(greeting, allow_interruptions=True)
+            logger.info("[STEP 9] ✅ Greeting sent")
+        except Exception as exc:
+            logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
