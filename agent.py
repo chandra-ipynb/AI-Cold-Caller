@@ -351,14 +351,10 @@ async def entrypoint(ctx: agents.JobContext):
     # ── STEP 7: Start session (before dial — warm up Gemini) ─────────
     logger.info("[STEP 7] Starting agent session in room...")
     try:
-        # For Gemini Realtime, only pass end_call tool to avoid blocking tool calls
+        # For Gemini Realtime, pass NO tools to prevent blocking function calls
         realtime_tools = []
         if is_realtime:
-            for t in list(fnc_ctx.function_tools.values()):
-                tool_name = getattr(t, 'name', '') or getattr(t, '__name__', '') or str(t)
-                if 'end_call' in str(tool_name):
-                    realtime_tools.append(t)
-            logger.info(f"[STEP 7] Realtime mode: using {len(realtime_tools)} essential tools (end_call only)")
+            logger.info("[STEP 7] Realtime mode: NO tools (pure conversation)")
         else:
             realtime_tools = list(fnc_ctx.function_tools.values())
 
