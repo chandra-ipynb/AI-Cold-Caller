@@ -369,34 +369,37 @@ async def entrypoint(ctx: agents.JobContext):
             )
             logger.info(f"[STEP 9] ✅ SIP call connected! Result: {result}")
             await _log("info", f"Call connected to {phone_number}")
-
-            # Speak first — use say() for Realtime, generate_reply() for pipeline
-            logger.info(f"[STEP 9] Generating opening greeting (realtime={is_realtime})...")
-            greeting = f"Hello{' ' + lead_name if lead_name else ''}! This is calling from {config_dict.get('business_name', 'our company')}. How are you today?"
-            if is_realtime:
-                await session.say(greeting, allow_interruptions=True)
-            else:
-                await session.generate_reply(
-                    instructions="The call has just connected. Speak immediately — introduce yourself."
-                )
-            logger.info("[STEP 9] ✅ Greeting sent")
         except Exception as e:
             logger.error(f"[STEP 9] ❌ SIP dial-out FAILED: {e}", exc_info=True)
             await _log("error", f"Failed to place outbound call to {phone_number}: {e}", str(e))
             ctx.shutdown()
+            return
+
+        # Greeting — for Realtime mode, the agent auto-speaks from instructions.
+        # For pipeline mode, use generate_reply().
+        if not is_realtime:
+            try:
+                logger.info("[STEP 9] Sending greeting via generate_reply (pipeline mode)...")
+                await session.generate_reply(
+                    instructions="The call has just connected. Speak immediately — introduce yourself."
+                )
+                logger.info("[STEP 9] ✅ Greeting sent")
+            except Exception as exc:
+                logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
+        else:
+            logger.info("[STEP 9] Realtime mode — agent will auto-greet from instructions")
     else:
-        if phone_number:
-            logger.info("[STEP 9] Generating greeting for existing participant...")
+        if not is_realtime:
+            try:
+                logger.info("[STEP 9] Sending greeting via generate_reply (pipeline mode)...")
+                await session.generate_reply(
+                    instructions="The call is connected. Greet the user immediately."
+                )
+                logger.info("[STEP 9] ✅ Greeting sent")
+            except Exception as exc:
+                logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
         else:
-            logger.info("[STEP 9] No phone number, generating default greeting...")
-        greeting = "Hello! How can I help you today?"
-        if is_realtime:
-            await session.say(greeting, allow_interruptions=True)
-        else:
-            await session.generate_reply(
-                instructions="The call is connected. Greet the user immediately."
-            )
-        logger.info("[STEP 9] ✅ Greeting sent")
+            logger.info("[STEP 9] Realtime mode — agent will auto-greet from instructions")
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
