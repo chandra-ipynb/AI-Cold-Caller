@@ -406,7 +406,9 @@ async def entrypoint(ctx: agents.JobContext):
             greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! This is a quick call — do you have a moment?"
             logger.info(f"[STEP 9] Sending greeting: {greeting}")
             await session.say(greeting, allow_interruptions=True)
-            logger.info("[STEP 9] ✅ Greeting sent")
+            # Add to chat context so the LLM knows we already said this
+            session.chat_ctx.append(text=greeting, role="assistant")
+            logger.info("[STEP 9] ✅ Greeting sent & added to context")
         except Exception as exc:
             logger.warning(f"[STEP 9] Greeting via say() failed (non-fatal): {exc}")
             # Fallback: try generate_reply for pipeline mode
