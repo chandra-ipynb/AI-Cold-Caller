@@ -83,7 +83,13 @@ try:
         pass
     try:
         _google_llm = _gp.LLM
-        _google_tts = _gp.TTS
+        # Try GeminiTTS first, fallback to standard TTS
+        try:
+            _google_tts = _gp.beta.GeminiTTS
+            logger.info("Loaded GeminiTTS")
+        except AttributeError:
+            _google_tts = _gp.TTS
+            logger.info("Loaded standard Google TTS")
     except AttributeError:
         pass
 except ImportError:
@@ -129,7 +135,15 @@ def _build_session(
                 # After the greeting, Gemini Realtime handles everything.
                 tts_for_greeting = None
                 if _google_tts:
-                    tts_for_greeting = _google_tts(voice=voice, api_key=api_key)
+                    try:
+                        # GeminiTTS takes voice/api_key. Standard TTS takes voice_name/credentials.
+                        # We try both patterns.
+                        try:
+                            tts_for_greeting = _google_tts(voice=voice, api_key=api_key)
+                        except TypeError:
+                            tts_for_greeting = _google_tts(voice_name=voice)
+                    except Exception as exc:
+                        logger.warning(f"Failed to initialize TTS for greeting: {exc}")
                 session = AgentSession(
                     llm=realtime_model,
                     tts=tts_for_greeting,
@@ -158,8 +172,14 @@ def _build_session(
 
     tts = None
     if _google_tts:
-        tts = _google_tts(voice=voice, api_key=api_key)
-        logger.info(f"Pipeline TTS: Google voice={voice}")
+        try:
+            try:
+                tts = _google_tts(voice=voice, api_key=api_key)
+            except TypeError:
+                tts = _google_tts(voice_name=voice)
+            logger.info(f"Pipeline TTS: Google voice={voice}")
+        except Exception as exc:
+            logger.warning(f"Failed to initialize pipeline TTS: {exc}")
 
     if not llm_instance:
         raise ValueError("No LLM configured — need either Gemini Realtime or Google LLM with GOOGLE_API_KEY")
