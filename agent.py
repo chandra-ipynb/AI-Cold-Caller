@@ -103,13 +103,15 @@ def _build_session(
     tools: list,
     voice: str = None,
     model: str = None,
-) -> AgentSession:
+) -> tuple:
     """
     Build an AgentSession configured for Gemini Live realtime (preferred)
     or fallback to pipeline mode (Google LLM + Google TTS, optional Deepgram STT).
+
+    Returns (session, is_realtime) tuple.
     """
     voice = voice or os.getenv("GEMINI_TTS_VOICE", "Aoede")
-    model = model or os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
+    model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-live-preview")
     use_realtime = os.getenv("USE_GEMINI_REALTIME", "true").lower() == "true"
     api_key = os.getenv("GOOGLE_API_KEY", "")
 
@@ -118,7 +120,6 @@ def _build_session(
         RealtimeModel = _google_realtime or _google_beta_realtime
         if RealtimeModel:
             try:
-                # NOTE: tools are NOT passed to RealtimeModel — they go to the Agent.
                 realtime_model = RealtimeModel(
                     model=model,
                     voice=voice,
@@ -128,7 +129,7 @@ def _build_session(
                     llm=realtime_model,
                 )
                 logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}")
-                return session
+                return session, True
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
 
@@ -142,7 +143,7 @@ def _build_session(
         except Exception as exc:
             logger.warning(f"Deepgram STT init failed: {exc}")
     else:
-        logger.info("Pipeline STT: skipped (no Deepgram key — Gemini LLM will handle)")
+        logger.info("Pipeline STT: skipped (no Deepgram key)")
 
     llm_instance = None
     if _google_llm:
@@ -162,7 +163,7 @@ def _build_session(
         llm=llm_instance,
         tts=tts,
     )
-    return session
+    return session, False
 
 
 # ── Agent class ──────────────────────────────────────────────────────────────
@@ -290,13 +291,14 @@ async def entrypoint(ctx: agents.JobContext):
 
     # ── STEP 6: Build AI session ─────────────────────────────────────
     logger.info("[STEP 6] Building AI session (Gemini Live)...")
+    is_realtime = False
     try:
-        session = _build_session(
+        session, is_realtime = _build_session(
             tools=tool_methods,
             voice=voice,
             model=model,
         )
-        logger.info("[STEP 6] ✅ AI session built successfully")
+        logger.info(f"[STEP 6] ✅ AI session built successfully (realtime={is_realtime})")
     except Exception as exc:
         logger.error(f"[STEP 6] ❌ Failed to build AI session: {exc}")
         await _log("error", f"AI session build failed: {exc}")
@@ -368,11 +370,15 @@ async def entrypoint(ctx: agents.JobContext):
             logger.info(f"[STEP 9] ✅ SIP call connected! Result: {result}")
             await _log("info", f"Call connected to {phone_number}")
 
-            # Speak first
-            logger.info("[STEP 9] Generating opening greeting...")
-            await session.generate_reply(
-                instructions="The call has just connected. Speak immediately — introduce yourself and confirm identity."
-            )
+            # Speak first — use say() for Realtime, generate_reply() for pipeline
+            logger.info(f"[STEP 9] Generating opening greeting (realtime={is_realtime})...")
+            greeting = f"Hello{' ' + lead_name if lead_name else ''}! This is calling from {config_dict.get('business_name', 'our company')}. How are you today?"
+            if is_realtime:
+                await session.say(greeting, allow_interruptions=True)
+            else:
+                await session.generate_reply(
+                    instructions="The call has just connected. Speak immediately — introduce yourself."
+                )
             logger.info("[STEP 9] ✅ Greeting sent")
         except Exception as e:
             logger.error(f"[STEP 9] ❌ SIP dial-out FAILED: {e}", exc_info=True)
@@ -383,9 +389,13 @@ async def entrypoint(ctx: agents.JobContext):
             logger.info("[STEP 9] Generating greeting for existing participant...")
         else:
             logger.info("[STEP 9] No phone number, generating default greeting...")
-        await session.generate_reply(
-            instructions="The call is connected. Greet the user immediately."
-        )
+        greeting = "Hello! How can I help you today?"
+        if is_realtime:
+            await session.say(greeting, allow_interruptions=True)
+        else:
+            await session.generate_reply(
+                instructions="The call is connected. Greet the user immediately."
+            )
         logger.info("[STEP 9] ✅ Greeting sent")
 
     logger.info("=" * 60)
