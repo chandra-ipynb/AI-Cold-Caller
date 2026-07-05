@@ -188,11 +188,10 @@ class OutboundAgent(Agent):
     Speaks first on connect, uses Gemini Live for real-time voice.
     """
 
-    def __init__(self, instructions: str, tools: list, chat_ctx=None) -> None:
+    def __init__(self, instructions: str, tools: list) -> None:
         super().__init__(
             instructions=instructions,
             tools=tools,
-            chat_ctx=chat_ctx,
         )
 
 
@@ -374,20 +373,10 @@ async def entrypoint(ctx: agents.JobContext):
     # ── STEP 9: Start session ────────────────────────────────────────
     logger.info("[STEP 9] Starting agent session in room...")
     try:
-        from livekit.agents import llm
-        initial_ctx = llm.ChatContext()
-        
-        # Kickstart the LLM so it speaks first in its own voice
-        kickstart_msg = f"The call has just connected. Introduce yourself immediately by asking 'Hi, am I speaking with {lead_name}?'. Do not say anything else before that." if lead_name and lead_name != "there" else "The call has connected, please introduce yourself."
-        initial_ctx.append(text=kickstart_msg, role="user")
-        
         my_agent = OutboundAgent(
             instructions=system_prompt,
             tools=list(fnc_ctx.function_tools.values()),
-            chat_ctx=initial_ctx,
         )
-        
-        logger.info(f"[STEP 9] Added kickstart message to context: {kickstart_msg}")
 
         await session.start(
             room=ctx.room,
@@ -401,6 +390,18 @@ async def entrypoint(ctx: agents.JobContext):
         logger.error(f"[STEP 9] ❌ Failed to start session: {exc}", exc_info=True)
         await _log("error", f"Session start failed: {exc}")
         return
+
+    # ── STEP 10: Trigger Gemini to speak first in its own voice ──────
+    try:
+        greeting_instruction = f"The call has just connected with {lead_name}. Say exactly: 'Hi, am I speaking with {lead_name}?' — nothing else." if lead_name and lead_name != "there" else "The call has just connected. Say: 'Hi there! Do you have a moment?' — nothing else."
+        logger.info(f"[STEP 10] Triggering greeting via generate_reply: {greeting_instruction}")
+        await session.generate_reply(
+            instructions=greeting_instruction
+        )
+        logger.info("[STEP 10] ✅ Greeting triggered")
+    except Exception as exc:
+        logger.warning(f"[STEP 10] generate_reply failed (non-fatal): {exc}")
+        # The system prompt already says SPEAK FIRST, so Gemini may still start on its own
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
