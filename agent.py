@@ -373,17 +373,19 @@ async def entrypoint(ctx: agents.JobContext):
     # ── STEP 9: Start session ────────────────────────────────────────
     logger.info("[STEP 9] Starting agent session in room...")
     try:
+        my_agent = OutboundAgent(
+            instructions=system_prompt,
+            tools=list(fnc_ctx.function_tools.values()),
+        )
+        
         # Kickstart the LLM so it speaks first in its own voice
         kickstart_msg = f"The call has just connected. Introduce yourself immediately by asking 'Hi, am I speaking with {lead_name}?'. Do not say anything else before that." if lead_name and lead_name != "there" else "The call has connected, please introduce yourself."
-        session.chat_ctx.append(text=kickstart_msg, role="user")
+        my_agent.chat_ctx.append(text=kickstart_msg, role="user")
         logger.info(f"[STEP 9] Added kickstart message to context: {kickstart_msg}")
 
         await session.start(
             room=ctx.room,
-            agent=OutboundAgent(
-                instructions=system_prompt,
-                tools=list(fnc_ctx.function_tools.values()),
-            ),
+            agent=my_agent,
             room_input_options=RoomInputOptions(
                 close_on_disconnect=True,
             ),
