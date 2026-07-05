@@ -188,10 +188,11 @@ class OutboundAgent(Agent):
     Speaks first on connect, uses Gemini Live for real-time voice.
     """
 
-    def __init__(self, instructions: str, tools: list) -> None:
+    def __init__(self, instructions: str, tools: list, chat_ctx=None) -> None:
         super().__init__(
             instructions=instructions,
             tools=tools,
+            chat_ctx=chat_ctx,
         )
 
 
@@ -373,14 +374,19 @@ async def entrypoint(ctx: agents.JobContext):
     # ── STEP 9: Start session ────────────────────────────────────────
     logger.info("[STEP 9] Starting agent session in room...")
     try:
-        my_agent = OutboundAgent(
-            instructions=system_prompt,
-            tools=list(fnc_ctx.function_tools.values()),
-        )
+        from livekit.agents import llm
+        initial_ctx = llm.ChatContext()
         
         # Kickstart the LLM so it speaks first in its own voice
         kickstart_msg = f"The call has just connected. Introduce yourself immediately by asking 'Hi, am I speaking with {lead_name}?'. Do not say anything else before that." if lead_name and lead_name != "there" else "The call has connected, please introduce yourself."
-        my_agent.chat_ctx.append(text=kickstart_msg, role="user")
+        initial_ctx.append(text=kickstart_msg, role="user")
+        
+        my_agent = OutboundAgent(
+            instructions=system_prompt,
+            tools=list(fnc_ctx.function_tools.values()),
+            chat_ctx=initial_ctx,
+        )
+        
         logger.info(f"[STEP 9] Added kickstart message to context: {kickstart_msg}")
 
         await session.start(
