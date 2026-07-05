@@ -131,24 +131,12 @@ def _build_session(
                     voice=voice,
                     api_key=api_key,
                 )
-                # Add a TTS so session.say() works for the first greeting.
-                # After the greeting, Gemini Realtime handles everything.
-                tts_for_greeting = None
-                if _google_tts:
-                    try:
-                        # GeminiTTS takes voice/api_key. Standard TTS takes voice_name/credentials.
-                        # We try both patterns.
-                        try:
-                            tts_for_greeting = _google_tts(voice=voice, api_key=api_key)
-                        except TypeError:
-                            tts_for_greeting = _google_tts(voice_name=voice)
-                    except Exception as exc:
-                        logger.warning(f"Failed to initialize TTS for greeting: {exc}")
+                # We do not use TTS for Gemini Realtime anymore, we kickstart it via chat context.
                 session = AgentSession(
                     llm=realtime_model,
-                    tts=tts_for_greeting,
+                    tts=None,
                 )
-                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'no'}")
+                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}")
                 return session, True
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
@@ -315,8 +303,60 @@ async def entrypoint(ctx: agents.JobContext):
     tool_methods = fnc_ctx.build_tool_list(enabled_tools_list)
     logger.info(f"[STEP 5] ✅ {len(tool_methods)} tools loaded")
 
-    # ── STEP 6: Build AI session ─────────────────────────────────────
-    logger.info("[STEP 6] Building AI session (Gemini Live)...")
+    # ── STEP 6: Determine if we need to dial out ─────────────────────
+    logger.info("[STEP 6] Checking if SIP dial-out is needed...")
+    should_dial = False
+    if phone_number:
+        user_already_here = False
+        for p in ctx.room.remote_participants.values():
+            logger.info(f"[STEP 6]   Checking participant: {p.identity}")
+            if f"sip_{phone_number}" in p.identity or "sip_" in p.identity:
+                user_already_here = True
+                break
+
+        if not user_already_here:
+            should_dial = True
+            logger.info("[STEP 6] → Will dial out (user not in room yet)")
+        else:
+            logger.info("[STEP 6] → User already in room, will greet directly")
+    else:
+        logger.warning("[STEP 6] ⚠️ No phone number — skipping dial-out")
+
+    # ── STEP 7: Dial out ─────────────────────────────────────────────
+    if should_dial:
+        trunk_id = os.getenv("OUTBOUND_TRUNK_ID", "")
+        logger.info(f"[STEP 7] SIP Dial-out starting...")
+        logger.info(f"[STEP 7]   Phone: {phone_number}")
+        logger.info(f"[STEP 7]   Trunk ID: {trunk_id}")
+        logger.info(f"[STEP 7]   Room: {ctx.room.name}")
+        logger.info(f"[STEP 7]   SIP Domain: {os.getenv('VOBIZ_SIP_DOMAIN', 'NOT SET')}")
+
+        if not trunk_id:
+            logger.error("[STEP 7] ❌ OUTBOUND_TRUNK_ID not set — cannot dial!")
+            await _log("error", "OUTBOUND_TRUNK_ID not set — cannot dial out")
+            return
+
+        try:
+            logger.info("[STEP 7] Calling create_sip_participant...")
+            result = await ctx.api.sip.create_sip_participant(
+                api.CreateSIPParticipantRequest(
+                    room_name=ctx.room.name,
+                    sip_trunk_id=trunk_id,
+                    sip_call_to=phone_number,
+                    participant_identity=f"sip_{phone_number}",
+                    wait_until_answered=True,
+                )
+            )
+            logger.info(f"[STEP 7] ✅ SIP call connected! Result: {result}")
+            await _log("info", f"Call connected to {phone_number}")
+        except Exception as e:
+            logger.error(f"[STEP 7] ❌ SIP dial-out FAILED: {e}", exc_info=True)
+            await _log("error", f"Failed to place outbound call to {phone_number}: {e}", str(e))
+            ctx.shutdown()
+            return
+
+    # ── STEP 8: Build AI session ─────────────────────────────────────
+    logger.info("[STEP 8] Building AI session (Gemini Live)...")
     is_realtime = False
     try:
         session, is_realtime = _build_session(
@@ -324,15 +364,20 @@ async def entrypoint(ctx: agents.JobContext):
             voice=voice,
             model=model,
         )
-        logger.info(f"[STEP 6] ✅ AI session built successfully (realtime={is_realtime})")
+        logger.info(f"[STEP 8] ✅ AI session built successfully (realtime={is_realtime})")
     except Exception as exc:
-        logger.error(f"[STEP 6] ❌ Failed to build AI session: {exc}")
+        logger.error(f"[STEP 8] ❌ Failed to build AI session: {exc}")
         await _log("error", f"AI session build failed: {exc}")
         return
 
-    # ── STEP 7: Start session ────────────────────────────────────────
-    logger.info("[STEP 7] Starting agent session in room...")
+    # ── STEP 9: Start session ────────────────────────────────────────
+    logger.info("[STEP 9] Starting agent session in room...")
     try:
+        # Kickstart the LLM so it speaks first in its own voice
+        kickstart_msg = f"The call has just connected. Introduce yourself immediately by asking 'Hi, am I speaking with {lead_name}?'. Do not say anything else before that." if lead_name and lead_name != "there" else "The call has connected, please introduce yourself."
+        session.chat_ctx.append(text=kickstart_msg, role="user")
+        logger.info(f"[STEP 9] Added kickstart message to context: {kickstart_msg}")
+
         await session.start(
             room=ctx.room,
             agent=OutboundAgent(
@@ -343,90 +388,11 @@ async def entrypoint(ctx: agents.JobContext):
                 close_on_disconnect=True,
             ),
         )
-        logger.info("[STEP 7] ✅ Agent session started in room")
+        logger.info("[STEP 9] ✅ Agent session started in room")
     except Exception as exc:
-        logger.error(f"[STEP 7] ❌ Failed to start session: {exc}", exc_info=True)
+        logger.error(f"[STEP 9] ❌ Failed to start session: {exc}", exc_info=True)
         await _log("error", f"Session start failed: {exc}")
         return
-
-    # ── STEP 8: Determine if we need to dial out ─────────────────────
-    logger.info("[STEP 8] Checking if SIP dial-out is needed...")
-    should_dial = False
-    if phone_number:
-        user_already_here = False
-        for p in ctx.room.remote_participants.values():
-            logger.info(f"[STEP 8]   Checking participant: {p.identity}")
-            if f"sip_{phone_number}" in p.identity or "sip_" in p.identity:
-                user_already_here = True
-                break
-
-        if not user_already_here:
-            should_dial = True
-            logger.info("[STEP 8] → Will dial out (user not in room yet)")
-        else:
-            logger.info("[STEP 8] → User already in room, will greet directly")
-    else:
-        logger.warning("[STEP 8] ⚠️ No phone number — skipping dial-out")
-
-    # ── STEP 9: Dial out or greet ────────────────────────────────────
-    if should_dial:
-        trunk_id = os.getenv("OUTBOUND_TRUNK_ID", "")
-        logger.info(f"[STEP 9] SIP Dial-out starting...")
-        logger.info(f"[STEP 9]   Phone: {phone_number}")
-        logger.info(f"[STEP 9]   Trunk ID: {trunk_id}")
-        logger.info(f"[STEP 9]   Room: {ctx.room.name}")
-        logger.info(f"[STEP 9]   SIP Domain: {os.getenv('VOBIZ_SIP_DOMAIN', 'NOT SET')}")
-
-        if not trunk_id:
-            logger.error("[STEP 9] ❌ OUTBOUND_TRUNK_ID not set — cannot dial!")
-            await _log("error", "OUTBOUND_TRUNK_ID not set — cannot dial out")
-            return
-
-        try:
-            logger.info("[STEP 9] Calling create_sip_participant...")
-            result = await ctx.api.sip.create_sip_participant(
-                api.CreateSIPParticipantRequest(
-                    room_name=ctx.room.name,
-                    sip_trunk_id=trunk_id,
-                    sip_call_to=phone_number,
-                    participant_identity=f"sip_{phone_number}",
-                    wait_until_answered=True,
-                )
-            )
-            logger.info(f"[STEP 9] ✅ SIP call connected! Result: {result}")
-            await _log("info", f"Call connected to {phone_number}")
-        except Exception as e:
-            logger.error(f"[STEP 9] ❌ SIP dial-out FAILED: {e}", exc_info=True)
-            await _log("error", f"Failed to place outbound call to {phone_number}: {e}", str(e))
-            ctx.shutdown()
-            return
-
-        # Speak the greeting immediately using session.say()
-        try:
-            greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! This is a quick call — do you have a moment?"
-            logger.info(f"[STEP 9] Sending greeting: {greeting}")
-            await session.say(greeting, allow_interruptions=True)
-            # Add to chat context so the LLM knows we already said this
-            session.chat_ctx.append(text=greeting, role="assistant")
-            logger.info("[STEP 9] ✅ Greeting sent & added to context")
-        except Exception as exc:
-            logger.warning(f"[STEP 9] Greeting via say() failed (non-fatal): {exc}")
-            # Fallback: try generate_reply for pipeline mode
-            if not is_realtime:
-                try:
-                    await session.generate_reply(
-                        instructions="The call has just connected. Speak immediately — introduce yourself."
-                    )
-                except Exception:
-                    pass
-    else:
-        try:
-            greeting = "Hello! How can I help you today?"
-            logger.info(f"[STEP 9] Sending greeting: {greeting}")
-            await session.say(greeting, allow_interruptions=True)
-            logger.info("[STEP 9] ✅ Greeting sent")
-        except Exception as exc:
-            logger.warning(f"[STEP 9] Greeting failed (non-fatal): {exc}")
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
