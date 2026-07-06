@@ -276,7 +276,7 @@ class AppointmentRequest(BaseModel):
 class AgentProfileRequest(BaseModel):
     name: str
     voice: Optional[str] = "Aoede"
-    model: Optional[str] = "gemini-3.1-flash-live-preview"
+    model: Optional[str] = "gemini-2.5-flash-native-audio-latest"
     system_prompt: Optional[str] = None
     enabled_tools: Optional[str] = "[]"
     is_default: Optional[bool] = False

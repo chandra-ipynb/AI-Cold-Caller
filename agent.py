@@ -24,6 +24,12 @@ try:
 except ImportError:
     _HAS_ROOM_OPTIONS = False
 from livekit.plugins import noise_cancellation, silero
+_openai_plugin = None
+try:
+    from livekit.plugins import openai as _op
+    _openai_plugin = _op
+except ImportError:
+    pass
 
 from db import init_db, log_error, get_enabled_tools, get_agent_profile, save_transcription
 from prompts import build_prompt
@@ -152,8 +158,16 @@ def _build_session(
                             logger.debug(f"TTS init failed with {tts_kwargs}: {exc}")
                             continue
                     if not tts_for_greeting:
-                        logger.warning("All TTS init attempts failed — greeting will use generate_reply fallback")
+                        if _openai_plugin and os.getenv("OPENAI_API_KEY"):
+                            try:
+                                tts_for_greeting = _openai_plugin.TTS(model="tts-1", voice="alloy")
+                                logger.info("TTS for greeting initialized using OpenAI fallback")
+                            except Exception as exc:
+                                logger.debug(f"OpenAI TTS init failed for greeting: {exc}")
+                        else:
+                            logger.warning("All TTS init attempts failed — greeting will use generate_reply fallback")
                 session = AgentSession(
+                    vad=silero.VAD.load(),
                     llm=realtime_model,
                     tts=tts_for_greeting,
                 )
@@ -190,10 +204,18 @@ def _build_session(
         except Exception as exc:
             logger.warning(f"Failed to initialize pipeline TTS: {exc}")
 
+    if not tts and _openai_plugin and os.getenv("OPENAI_API_KEY"):
+        try:
+            tts = _openai_plugin.TTS(model="tts-1", voice="alloy")
+            logger.info("Pipeline TTS: OpenAI fallback")
+        except Exception as exc:
+            logger.warning(f"Failed to initialize pipeline TTS via OpenAI fallback: {exc}")
+
     if not llm_instance:
         raise ValueError("No LLM configured — need either Gemini Realtime or Google LLM with GOOGLE_API_KEY")
 
     session = AgentSession(
+        vad=silero.VAD.load(),
         stt=stt,
         llm=llm_instance,
         tts=tts,
