@@ -25,7 +25,7 @@ except ImportError:
     _HAS_ROOM_OPTIONS = False
 from livekit.plugins import noise_cancellation, silero
 
-from db import init_db, log_error, get_enabled_tools, get_agent_profile
+from db import init_db, log_error, get_enabled_tools, get_agent_profile, save_transcription
 from prompts import build_prompt
 from tools import AppointmentTools
 
@@ -431,6 +431,71 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
     logger.info("=" * 60)
+
+    # ── Transcription capture ────────────────────────────────────────
+    import time as _time
+    from datetime import datetime
+    call_start_time = _time.time()
+    transcript_log = []
+
+    # Capture the greeting we already sent
+    if lead_name and lead_name != "there":
+        transcript_log.append({
+            "role": "assistant",
+            "text": f"Hi, am I speaking with {lead_name}?",
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    @session.on("user_speech_committed")
+    def _on_user_speech(msg):
+        text = ""
+        try:
+            text = msg.content if hasattr(msg, 'content') else str(msg)
+        except Exception:
+            text = str(msg)
+        if text:
+            transcript_log.append({
+                "role": "user",
+                "text": text,
+                "timestamp": datetime.now().isoformat(),
+            })
+            logger.info(f"[TRANSCRIPT] User: {text[:100]}")
+
+    @session.on("agent_speech_committed")
+    def _on_agent_speech(msg):
+        text = ""
+        try:
+            text = msg.content if hasattr(msg, 'content') else str(msg)
+        except Exception:
+            text = str(msg)
+        if text:
+            transcript_log.append({
+                "role": "assistant",
+                "text": text,
+                "timestamp": datetime.now().isoformat(),
+            })
+            logger.info(f"[TRANSCRIPT] Agent: {text[:100]}")
+
+    # Save transcript when room disconnects
+    @ctx.room.on("disconnected")
+    async def _on_disconnect():
+        duration = int(_time.time() - call_start_time)
+        if not transcript_log:
+            logger.info("[TRANSCRIPT] No transcript to save (empty)")
+            return
+        try:
+            call_id = ctx.job.id if hasattr(ctx.job, 'id') else ctx.room.name
+            tid = await save_transcription(
+                call_id=call_id,
+                room_name=ctx.room.name,
+                phone_number=phone_number,
+                lead_name=lead_name,
+                transcript=transcript_log,
+                duration_seconds=duration,
+            )
+            logger.info(f"[TRANSCRIPT] ✅ Saved {len(transcript_log)} messages (id={tid}, duration={duration}s)")
+        except Exception as exc:
+            logger.error(f"[TRANSCRIPT] ❌ Failed to save: {exc}")
 
 
 if __name__ == "__main__":

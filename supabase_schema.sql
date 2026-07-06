@@ -86,3 +86,18 @@ CREATE TABLE IF NOT EXISTS agent_profiles (
     created_at TEXT NOT NULL
 );
 ALTER TABLE agent_profiles DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS call_transcriptions (
+    id TEXT PRIMARY KEY,
+    call_id TEXT NOT NULL,
+    room_name TEXT,
+    phone_number TEXT,
+    lead_name TEXT,
+    transcript JSONB NOT NULL DEFAULT '[]',
+    summary TEXT,
+    duration_seconds INTEGER,
+    created_at TEXT NOT NULL
+);
+ALTER TABLE call_transcriptions DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_transcriptions_call ON call_transcriptions (call_id);
+CREATE INDEX IF NOT EXISTS idx_transcriptions_phone ON call_transcriptions (phone_number);

@@ -469,3 +469,49 @@ async def set_default_agent_profile(profile_id: str) -> None:
     db = await _adb()
     await db.table("agent_profiles").update({"is_default": 0}).neq("id", "placeholder").execute()
     await db.table("agent_profiles").update({"is_default": 1}).eq("id", profile_id).execute()
+
+
+# ── Call Transcriptions ───────────────────────────────────────────────────────
+
+async def save_transcription(
+    call_id: str,
+    room_name: str,
+    phone_number: Optional[str],
+    lead_name: Optional[str],
+    transcript: list,
+    duration_seconds: int = 0,
+    summary: Optional[str] = None,
+) -> str:
+    """Save a full call transcription to Supabase."""
+    import json as _json
+    transcription_id = str(uuid.uuid4())
+    db = await _adb()
+    await db.table("call_transcriptions").insert({
+        "id": transcription_id,
+        "call_id": call_id,
+        "room_name": room_name,
+        "phone_number": phone_number,
+        "lead_name": lead_name,
+        "transcript": _json.dumps(transcript),
+        "summary": summary,
+        "duration_seconds": duration_seconds,
+        "created_at": datetime.now().isoformat(),
+    }).execute()
+    return transcription_id
+
+
+async def get_transcriptions(phone: Optional[str] = None, limit: int = 50) -> list:
+    """Get call transcriptions, optionally filtered by phone number."""
+    db = await _adb()
+    query = db.table("call_transcriptions").select("*").order("created_at", desc=True).limit(limit)
+    if phone:
+        query = query.eq("phone_number", phone)
+    result = await query.execute()
+    return result.data or []
+
+
+async def get_transcription(transcription_id: str) -> Optional[dict]:
+    """Get a single transcription by ID."""
+    db = await _adb()
+    result = await db.table("call_transcriptions").select("*").eq("id", transcription_id).maybe_single().execute()
+    return result.data if result else None
