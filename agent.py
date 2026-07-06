@@ -131,21 +131,28 @@ def _build_session(
                     voice=voice,
                     api_key=api_key,
                 )
-                # Add a Google TTS for instant first greeting via session.say()
+                # Add a TTS for instant first greeting via session.say()
                 # After the greeting, Gemini Realtime handles all audio natively
                 tts_for_greeting = None
                 if _google_tts:
-                    for tts_kwargs in [
-                        {"voice_name": "en-IN-Standard-A"},  # Indian English female
-                        {"voice_name": "en-US-Standard-H"},  # fallback US English
-                        {},                                   # bare defaults
-                    ]:
+                    # Try different parameter combos — GeminiTTS vs standard TTS have different APIs
+                    tts_attempts = [
+                        {"voice": "Aoede", "api_key": api_key},           # GeminiTTS style
+                        {"voice": voice, "api_key": api_key},             # GeminiTTS with configured voice
+                        {"voice_name": "en-IN-Standard-A"},               # Standard TTS (Indian English)
+                        {"voice_name": "en-US-Standard-H"},               # Standard TTS (US English)
+                        {},                                                # bare defaults
+                    ]
+                    for tts_kwargs in tts_attempts:
                         try:
                             tts_for_greeting = _google_tts(**tts_kwargs)
                             logger.info(f"TTS for greeting initialized: {tts_kwargs}")
                             break
-                        except Exception:
+                        except Exception as exc:
+                            logger.debug(f"TTS init failed with {tts_kwargs}: {exc}")
                             continue
+                    if not tts_for_greeting:
+                        logger.warning("All TTS init attempts failed — greeting will use generate_reply fallback")
                 session = AgentSession(
                     llm=realtime_model,
                     tts=tts_for_greeting,
@@ -418,15 +425,19 @@ async def entrypoint(ctx: agents.JobContext):
         greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
         logger.info(f"[STEP 9] Sending instant greeting: {greeting}")
         await session.say(greeting, allow_interruptions=True)
-        logger.info("[STEP 9] ✅ Greeting sent")
+        logger.info("[STEP 9] ✅ Greeting sent via TTS")
     except Exception as exc:
-        logger.warning(f"[STEP 9] session.say() failed, trying generate_reply: {exc}")
+        logger.warning(f"[STEP 9] session.say() failed: {exc}")
+        await _log("warning", f"session.say() failed: {exc}", str(exc))
         try:
+            logger.info("[STEP 9] Falling back to generate_reply...")
             await session.generate_reply(
-                instructions=f"Say: Hi, am I speaking with {lead_name}?"
+                instructions=f"Say hi to {lead_name}" if lead_name and lead_name != "there" else "Say hi"
             )
+            logger.info("[STEP 9] ✅ Greeting sent via generate_reply")
         except Exception as exc2:
-            logger.warning(f"[STEP 9] generate_reply also failed: {exc2}")
+            logger.error(f"[STEP 9] generate_reply also failed: {exc2}")
+            await _log("error", f"Both greeting methods failed: {exc2}", str(exc2))
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
