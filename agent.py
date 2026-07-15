@@ -395,6 +395,7 @@ async def entrypoint(ctx: agents.JobContext):
             room=ctx.room,
             agent=my_agent,
             room_input_options=RoomInputOptions(
+                noise_cancellation=noise_cancellation.BVCTelephony(),
                 close_on_disconnect=True,
             ),
         )
@@ -442,23 +443,27 @@ async def entrypoint(ctx: agents.JobContext):
             ctx.shutdown()
             return
 
-    # ── STEP 9: Instant greeting via TTS (< 1 second) ────────────────
+    # ── STEP 9: Greeting — generate_reply first (works with realtime + pipeline) ──
     try:
-        greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
-        logger.info(f"[STEP 9] Sending instant greeting: {greeting}")
-        await session.say(greeting, allow_interruptions=True)
-        logger.info("[STEP 9] ✅ Greeting sent via TTS")
+        greeting_instruction = (
+            f"The call has just connected with {lead_name}. Speak immediately — introduce yourself and confirm you are speaking with {lead_name}."
+            if lead_name and lead_name != "there"
+            else "The call has just connected. Speak immediately — introduce yourself and ask if the person has a moment."
+        )
+        logger.info(f"[STEP 9] Sending greeting via generate_reply: {greeting_instruction}")
+        await session.generate_reply(instructions=greeting_instruction)
+        logger.info("[STEP 9] ✅ Greeting sent via generate_reply")
     except Exception as exc:
-        logger.warning(f"[STEP 9] session.say() failed: {exc}")
-        await _log("warning", f"session.say() failed: {exc}", str(exc))
+        logger.warning(f"[STEP 9] generate_reply greeting failed: {exc}")
+        await _log("warning", f"generate_reply greeting failed: {exc}", str(exc))
+        # Fallback: try session.say() with explicit text
         try:
-            logger.info("[STEP 9] Falling back to generate_reply...")
-            await session.generate_reply(
-                instructions=f"Say hi to {lead_name}" if lead_name and lead_name != "there" else "Say hi"
-            )
-            logger.info("[STEP 9] ✅ Greeting sent via generate_reply")
+            greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
+            logger.info(f"[STEP 9] Fallback: trying session.say(): {greeting}")
+            await session.say(greeting, allow_interruptions=True)
+            logger.info("[STEP 9] ✅ Greeting sent via say()")
         except Exception as exc2:
-            logger.error(f"[STEP 9] generate_reply also failed: {exc2}")
+            logger.error(f"[STEP 9] ❌ Both greeting methods failed: {exc2}")
             await _log("error", f"Both greeting methods failed: {exc2}", str(exc2))
 
     logger.info("=" * 60)
