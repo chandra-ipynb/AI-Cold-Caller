@@ -166,20 +166,22 @@ def _build_session(
                                 logger.debug(f"OpenAI TTS init failed for greeting: {exc}")
                         else:
                             logger.warning("All TTS init attempts failed — greeting will use generate_reply fallback")
-                # Minimal session for RealtimeModel — no VAD, no TTS.
-                # Gemini native audio handles turn management internally.
-                # TTS audio doesn't reach SIP callers (proven by testing).
-                # VAD may block SIP audio from reaching the model.
+                # RealtimeModel session WITH silero VAD.
+                # Gemini's built-in VAD doesn't reliably detect speech from SIP
+                # telephony streams. silero VAD provides reliable speaking signals
+                # so the session knows when to forward audio to Gemini.
+                # No TTS needed — TTS audio doesn't reach SIP callers (proven).
                 session = AgentSession(
+                    vad=silero.VAD.load(),
                     llm=realtime_model,
                 )
-                logger.info(f"Using Gemini Live realtime (minimal): model={model}, voice={voice}")
+                logger.info(f"Using Gemini Live realtime (with VAD): model={model}, voice={voice}")
                 # Log diagnostic info to Supabase
                 import asyncio
                 try:
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
-                        asyncio.ensure_future(_log("info", f"SESSION-DIAG: realtime=True, model={model}, voice={voice}, minimal=True, no-vad, no-tts"))
+                        asyncio.ensure_future(_log("info", f"SESSION-DIAG: realtime=True, model={model}, voice={voice}, vad=silero"))
                 except Exception:
                     pass
                 return session, True
