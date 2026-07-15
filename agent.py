@@ -522,31 +522,35 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info("[STEP 8b] ✅ RTP stabilization delay complete — media path should be ready")
 
     # ── STEP 9: Greeting — AFTER SIP media is ready ──────────────────
-    # Critical: on_enter fires BEFORE dial, so we must greet here
+    # Use session.say() (TTS) for the greeting — NOT generate_reply.
+    # generate_reply locks the RealtimeModel's conversation state, preventing
+    # it from processing follow-up user audio. session.say() uses the separate
+    # TTS engine, leaving the RealtimeModel in its natural listening mode.
     logger.info("[STEP 9] Sending greeting now (after SIP media ready)...")
     await _log("info", "STEP9: sending greeting after SIP media ready")
+
+    greeting = (
+        f"Hi, am I speaking with {lead_name}?"
+        if lead_name and lead_name != "there"
+        else "Hi there! Do you have a moment?"
+    )
+
     try:
-        greeting_instruction = (
-            f"The call has just connected with {lead_name}. "
-            f"Speak immediately — introduce yourself and confirm you are speaking with {lead_name}."
-            if lead_name and lead_name != "there"
-            else "The call has just connected. "
-                 "Speak immediately — introduce yourself and ask if the person has a moment."
-        )
-        logger.info(f"[STEP 9] generate_reply: {greeting_instruction[:80]}...")
-        await session.generate_reply(instructions=greeting_instruction)
-        logger.info("[STEP 9] ✅ generate_reply returned OK")
-        await _log("info", "STEP9: generate_reply OK")
+        logger.info(f"[STEP 9] session.say: {greeting}")
+        await session.say(greeting, allow_interruptions=True)
+        logger.info("[STEP 9] ✅ session.say OK")
+        await _log("info", f"STEP9: session.say OK — '{greeting}'")
     except Exception as exc:
-        logger.warning(f"[STEP 9] generate_reply failed: {exc}")
-        await _log("warning", f"STEP9: generate_reply FAILED: {exc}", str(exc))
-        # Fallback: try session.say
+        logger.warning(f"[STEP 9] session.say failed: {exc}")
+        await _log("warning", f"STEP9: session.say FAILED: {exc}", str(exc))
+        # Fallback: try generate_reply
         try:
-            greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
-            logger.info(f"[STEP 9] Fallback session.say: {greeting}")
-            await session.say(greeting, allow_interruptions=True)
-            logger.info("[STEP 9] ✅ session.say OK")
-            await _log("info", "STEP9: session.say OK")
+            logger.info("[STEP 9] Fallback: generate_reply...")
+            await session.generate_reply(
+                instructions=f"Say hi to {lead_name}" if lead_name and lead_name != "there" else "Say hi"
+            )
+            logger.info("[STEP 9] ✅ generate_reply fallback OK")
+            await _log("info", "STEP9: generate_reply fallback OK")
         except Exception as exc2:
             logger.error(f"[STEP 9] ❌ Both greeting methods failed: {exc2}")
             await _log("error", f"STEP9: both methods FAILED: {exc2}", str(exc2))
