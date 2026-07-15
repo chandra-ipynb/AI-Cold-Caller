@@ -171,7 +171,15 @@ def _build_session(
                     llm=realtime_model,
                     tts=tts_for_greeting,
                 )
-                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'no'}")
+                logger.info(f"Using Gemini Live realtime: model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'NO-TTS'}")
+                # Log diagnostic info to Supabase so we can see it remotely
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(_log("info", f"SESSION-DIAG: realtime=True, model={model}, voice={voice}, tts={'yes' if tts_for_greeting else 'NO'}"))
+                except Exception:
+                    pass
                 return session, True
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
@@ -242,6 +250,10 @@ class OutboundAgent(Agent):
     async def on_enter(self):
         """Called when the agent enters the session — speak the greeting immediately."""
         lead = self._lead_name
+        logger.info(f"[on_enter] CALLED — lead={lead}, session={self.session}")
+        await _log("info", f"ON_ENTER: lead={lead}, session_type={type(self.session).__name__}")
+
+        # Try generate_reply first (works with RealtimeModel native audio)
         try:
             if lead and lead != "there":
                 greeting_instruction = (
@@ -253,11 +265,25 @@ class OutboundAgent(Agent):
                     "The call has just connected. "
                     "Speak immediately — introduce yourself and ask if the person has a moment."
                 )
-            logger.info(f"[on_enter] Generating greeting via generate_reply...")
+            logger.info(f"[on_enter] Calling generate_reply...")
+            await _log("info", f"ON_ENTER: calling generate_reply")
             self.session.generate_reply(instructions=greeting_instruction)
-            logger.info("[on_enter] ✅ generate_reply triggered")
+            logger.info("[on_enter] ✅ generate_reply triggered (no exception)")
+            await _log("info", "ON_ENTER: generate_reply returned OK")
         except Exception as exc:
             logger.error(f"[on_enter] ❌ generate_reply failed: {exc}", exc_info=True)
+            await _log("error", f"ON_ENTER: generate_reply FAILED: {exc}", str(exc))
+            # Fallback: try session.say
+            try:
+                greeting = f"Hi, am I speaking with {lead}?" if lead and lead != "there" else "Hi there! Do you have a moment?"
+                logger.info(f"[on_enter] Trying fallback session.say: {greeting}")
+                await _log("info", f"ON_ENTER: trying fallback session.say")
+                await self.session.say(greeting, allow_interruptions=True)
+                logger.info("[on_enter] ✅ session.say worked")
+                await _log("info", "ON_ENTER: session.say OK")
+            except Exception as exc2:
+                logger.error(f"[on_enter] ❌ session.say also failed: {exc2}", exc_info=True)
+                await _log("error", f"ON_ENTER: both methods FAILED: {exc2}", str(exc2))
 
 
 # ── SIP participant readiness helper ─────────────────────────────────────────
@@ -454,6 +480,13 @@ async def entrypoint(ctx: agents.JobContext):
             ),
         )
         logger.info("[STEP 7] ✅ Agent session started — Gemini is warm")
+        # Diagnostic: log session details to Supabase
+        try:
+            tts_info = getattr(session, '_tts', None) or getattr(session, 'tts', None)
+            llm_info = getattr(session, '_llm', None) or getattr(session, 'llm', None)
+            await _log("info", f"SESSION-STARTED: llm={type(llm_info).__name__ if llm_info else 'None'}, tts={type(tts_info).__name__ if tts_info else 'None'}, realtime={is_realtime}")
+        except Exception:
+            pass
     except Exception as exc:
         logger.error(f"[STEP 7] ❌ Failed to start session: {exc}", exc_info=True)
         await _log("error", f"Session start failed: {exc}")
