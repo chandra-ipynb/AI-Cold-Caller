@@ -123,7 +123,7 @@ def _build_session(
     Returns (session, is_realtime) tuple.
     """
     voice = voice or os.getenv("GEMINI_TTS_VOICE", "Aoede")
-    model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
+    model = model or os.getenv("GEMINI_MODEL", "gemini-3.1-flash-live-preview")
     use_realtime = os.getenv("USE_GEMINI_REALTIME", "true").lower() == "true"
     api_key = os.getenv("GOOGLE_API_KEY", "")
 
