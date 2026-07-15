@@ -123,7 +123,7 @@ def _build_session(
     Returns (session, is_realtime) tuple.
     """
     voice = voice or os.getenv("GEMINI_TTS_VOICE", "Aoede")
-    model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-live-preview")
+    model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-native-audio-preview-12-2025")
     use_realtime = os.getenv("USE_GEMINI_REALTIME", "true").lower() == "true"
     api_key = os.getenv("GOOGLE_API_KEY", "")
 
@@ -236,6 +236,37 @@ class OutboundAgent(Agent):
             instructions=instructions,
             tools=tools,
         )
+
+
+# ── SIP participant readiness helper ─────────────────────────────────────────
+
+async def _wait_for_participant_ready(room, identity: str):
+    """
+    Wait until the SIP participant has joined the room AND has an active,
+    subscribed audio track. This ensures the RTP media path is fully
+    established before the agent starts speaking.
+    """
+    event = asyncio.Event()
+
+    def _check_now():
+        for p in room.remote_participants.values():
+            if identity in p.identity:
+                for pub in p.track_publications.values():
+                    if pub.kind == rtc.TrackKind.KIND_AUDIO and pub.track:
+                        return True
+        return False
+
+    # Already ready?
+    if _check_now():
+        return
+
+    # Otherwise wait for track_subscribed event
+    @room.on("track_subscribed")
+    def _on_track(track, publication, participant):
+        if identity in participant.identity and track.kind == rtc.TrackKind.KIND_AUDIO:
+            event.set()
+
+    await event.wait()
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────
@@ -435,13 +466,33 @@ async def entrypoint(ctx: agents.JobContext):
                     wait_until_answered=True,
                 )
             )
-            logger.info(f"[STEP 8] ✅ Call connected")
+            logger.info(f"[STEP 8] ✅ SIP 200 OK received (call answered)")
             await _log("info", f"Call connected to {phone_number}")
         except Exception as e:
             logger.error(f"[STEP 8] ❌ Dial failed: {e}", exc_info=True)
             await _log("error", f"Failed to place outbound call to {phone_number}: {e}", str(e))
             ctx.shutdown()
             return
+
+        # ── STEP 8b: Wait for SIP participant's audio track to be ready ──
+        # The SIP 200 OK only means signaling is done. The RTP media path
+        # (actual audio) needs a moment to fully establish. Without this wait,
+        # the greeting audio frames are dropped by the SIP gateway.
+        sip_identity = f"sip_{phone_number}"
+        try:
+            logger.info(f"[STEP 8b] Waiting for SIP participant media ({sip_identity})...")
+            await asyncio.wait_for(
+                _wait_for_participant_ready(ctx.room, sip_identity),
+                timeout=10.0,
+            )
+            logger.info("[STEP 8b] ✅ SIP participant audio track subscribed")
+        except asyncio.TimeoutError:
+            logger.warning("[STEP 8b] ⚠️ Timed out waiting for participant audio track — proceeding anyway")
+
+        # Additional RTP stabilization delay — standard practice for SIP telephony
+        # Ensures the audio path is truly bidirectional before the agent speaks
+        await asyncio.sleep(0.8)
+        logger.info("[STEP 8b] ✅ RTP stabilization delay complete — media path should be ready")
 
     # ── STEP 9: Greeting — generate_reply first (works with realtime + pipeline) ──
     try:
