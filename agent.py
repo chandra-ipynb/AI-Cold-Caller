@@ -74,6 +74,7 @@ _google_realtime = None
 _google_beta_realtime = None
 _google_llm = None
 _google_tts = None
+_google_stt = None
 
 try:
     from livekit.plugins import google as _gp
@@ -98,6 +99,12 @@ try:
             logger.info("Loaded standard Google TTS")
     except AttributeError:
         pass
+    # Google STT
+    try:
+        _google_stt = _gp.STT
+        logger.info("Loaded Google STT")
+    except AttributeError:
+        logger.info("Google STT not available")
 except ImportError:
     logger.warning("livekit-plugins-google not installed")
 
@@ -124,7 +131,9 @@ def _build_session(
     """
     voice = voice or os.getenv("GEMINI_TTS_VOICE", "Aoede")
     model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash-native-audio-latest")
-    use_realtime = os.getenv("USE_GEMINI_REALTIME", "true").lower() == "true"
+    # IMPORTANT: RealtimeModel has known SIP audio input issues.
+    # Default to pipeline mode (false) for reliable SIP telephony.
+    use_realtime = os.getenv("USE_GEMINI_REALTIME", "false").lower() == "true"
     api_key = os.getenv("GOOGLE_API_KEY", "")
 
     # Try Gemini Live realtime first (sub-100ms, zero separate STT/TTS)
@@ -188,17 +197,37 @@ def _build_session(
             except Exception as exc:
                 logger.warning(f"Gemini Live init failed, falling back to pipeline: {exc}")
 
-    # Fallback: pipeline mode (optional Deepgram STT → Google LLM → Google TTS)
+    # ============================================================
+    # PIPELINE MODE: Google STT → Google LLM → Google TTS
+    # RealtimeModel has known SIP audio input issues.
+    # Pipeline mode was working on July 5 with full conversations.
+    # ============================================================
     logger.info("Using pipeline mode (STT + LLM + TTS)")
+    await_log = asyncio.ensure_future if 'asyncio' in dir() else None
+    import asyncio
+
+    # STT: Google STT (primary) or Deepgram (fallback)
     stt = None
-    if _deepgram_stt and os.getenv("DEEPGRAM_API_KEY"):
+    if _google_stt and api_key:
+        try:
+            stt = _google_stt(api_key=api_key, language="en")
+            logger.info("Pipeline STT: Google")
+        except Exception as exc:
+            logger.warning(f"Google STT init failed: {exc}")
+    if not stt and _deepgram_stt and os.getenv("DEEPGRAM_API_KEY"):
         try:
             stt = _deepgram_stt(model="nova-2", language="en")
             logger.info("Pipeline STT: Deepgram nova-2")
         except Exception as exc:
             logger.warning(f"Deepgram STT init failed: {exc}")
-    else:
-        logger.info("Pipeline STT: skipped (no Deepgram key)")
+    if not stt:
+        logger.warning("No STT available — trying Google STT with minimal config")
+        if _google_stt:
+            try:
+                stt = _google_stt()
+                logger.info("Pipeline STT: Google (minimal config)")
+            except Exception as exc:
+                logger.error(f"Google STT minimal init also failed: {exc}")
 
     llm_instance = None
     if _google_llm:
@@ -525,26 +554,31 @@ async def entrypoint(ctx: agents.JobContext):
         logger.info("[STEP 8b] ✅ RTP stabilization delay complete — media path should be ready")
 
     # ── STEP 9: Greeting — AFTER SIP media is ready ──────────────────
-    # Use generate_reply (proven to produce audible audio on SIP).
-    # session.say/TTS audio does NOT reach SIP callers.
     logger.info("[STEP 9] Sending greeting now (after SIP media ready)...")
     await _log("info", "STEP9: sending greeting after SIP media ready")
 
+    greeting = (
+        f"Hi, am I speaking with {lead_name}?"
+        if lead_name and lead_name != "there"
+        else "Hi there! Do you have a moment?"
+    )
+
     try:
-        greeting_instruction = (
-            f"The call has just connected with {lead_name}. "
-            f"Say: Hi, am I speaking with {lead_name}? Then wait for their response."
-            if lead_name and lead_name != "there"
-            else "The call has just connected. "
-                 "Say: Hi there, do you have a moment? Then wait for their response."
-        )
-        logger.info(f"[STEP 9] generate_reply: {greeting_instruction[:80]}...")
-        await session.generate_reply(instructions=greeting_instruction)
-        logger.info("[STEP 9] ✅ generate_reply OK")
-        await _log("info", "STEP9: generate_reply OK")
+        # Pipeline mode: use session.say (TTS)
+        # RealtimeModel mode: use generate_reply (native audio)
+        if is_realtime:
+            logger.info(f"[STEP 9] Realtime: generate_reply")
+            await session.generate_reply(
+                instructions=f"Say: {greeting} Then wait for their response."
+            )
+        else:
+            logger.info(f"[STEP 9] Pipeline: session.say: {greeting}")
+            await session.say(greeting, allow_interruptions=True)
+        logger.info("[STEP 9] ✅ Greeting OK")
+        await _log("info", f"STEP9: greeting OK (realtime={is_realtime})")
     except Exception as exc:
-        logger.error(f"[STEP 9] ❌ generate_reply failed: {exc}")
-        await _log("error", f"STEP9: generate_reply FAILED: {exc}", str(exc))
+        logger.error(f"[STEP 9] ❌ Greeting failed: {exc}")
+        await _log("error", f"STEP9: greeting FAILED: {exc}", str(exc))
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
