@@ -190,8 +190,8 @@ def _build_session(
 
     llm_instance = None
     if _google_llm:
-        llm_instance = _google_llm(model="gemini-2.0-flash", api_key=api_key)
-        logger.info("Pipeline LLM: Google gemini-2.0-flash")
+        llm_instance = _google_llm(model="gemini-2.5-flash", api_key=api_key)
+        logger.info("Pipeline LLM: Google gemini-2.5-flash")
 
     tts = None
     if _google_tts:
@@ -228,14 +228,36 @@ def _build_session(
 class OutboundAgent(Agent):
     """
     AI agent for outbound appointment-booking calls.
-    Speaks first on connect, uses Gemini Live for real-time voice.
+    Uses on_enter() to speak the greeting as soon as it joins — this is the
+    officially recommended LiveKit pattern for RealtimeModel agents.
     """
 
-    def __init__(self, instructions: str, tools: list) -> None:
+    def __init__(self, instructions: str, tools: list, lead_name: str = None) -> None:
         super().__init__(
             instructions=instructions,
             tools=tools,
         )
+        self._lead_name = lead_name
+
+    async def on_enter(self):
+        """Called when the agent enters the session — speak the greeting immediately."""
+        lead = self._lead_name
+        try:
+            if lead and lead != "there":
+                greeting_instruction = (
+                    f"The call has just connected with {lead}. "
+                    f"Speak immediately — introduce yourself and confirm you are speaking with {lead}."
+                )
+            else:
+                greeting_instruction = (
+                    "The call has just connected. "
+                    "Speak immediately — introduce yourself and ask if the person has a moment."
+                )
+            logger.info(f"[on_enter] Generating greeting via generate_reply...")
+            self.session.generate_reply(instructions=greeting_instruction)
+            logger.info("[on_enter] ✅ generate_reply triggered")
+        except Exception as exc:
+            logger.error(f"[on_enter] ❌ generate_reply failed: {exc}", exc_info=True)
 
 
 # ── SIP participant readiness helper ─────────────────────────────────────────
@@ -421,6 +443,7 @@ async def entrypoint(ctx: agents.JobContext):
         my_agent = OutboundAgent(
             instructions=system_prompt,
             tools=realtime_tools,
+            lead_name=lead_name,
         )
         await session.start(
             room=ctx.room,
@@ -494,28 +517,9 @@ async def entrypoint(ctx: agents.JobContext):
         await asyncio.sleep(0.8)
         logger.info("[STEP 8b] ✅ RTP stabilization delay complete — media path should be ready")
 
-    # ── STEP 9: Greeting — generate_reply first (works with realtime + pipeline) ──
-    try:
-        greeting_instruction = (
-            f"The call has just connected with {lead_name}. Speak immediately — introduce yourself and confirm you are speaking with {lead_name}."
-            if lead_name and lead_name != "there"
-            else "The call has just connected. Speak immediately — introduce yourself and ask if the person has a moment."
-        )
-        logger.info(f"[STEP 9] Sending greeting via generate_reply: {greeting_instruction}")
-        await session.generate_reply(instructions=greeting_instruction)
-        logger.info("[STEP 9] ✅ Greeting sent via generate_reply")
-    except Exception as exc:
-        logger.warning(f"[STEP 9] generate_reply greeting failed: {exc}")
-        await _log("warning", f"generate_reply greeting failed: {exc}", str(exc))
-        # Fallback: try session.say() with explicit text
-        try:
-            greeting = f"Hi, am I speaking with {lead_name}?" if lead_name and lead_name != "there" else "Hi there! Do you have a moment?"
-            logger.info(f"[STEP 9] Fallback: trying session.say(): {greeting}")
-            await session.say(greeting, allow_interruptions=True)
-            logger.info("[STEP 9] ✅ Greeting sent via say()")
-        except Exception as exc2:
-            logger.error(f"[STEP 9] ❌ Both greeting methods failed: {exc2}")
-            await _log("error", f"Both greeting methods failed: {exc2}", str(exc2))
+    # Note: The greeting is handled by OutboundAgent.on_enter() which fires
+    # when the agent session detects a participant. No explicit greeting needed here.
+    logger.info("[STEP 9] Agent on_enter will handle greeting when participant audio is detected")
 
     logger.info("=" * 60)
     logger.info("ENTRYPOINT COMPLETE — agent is now live in room")
