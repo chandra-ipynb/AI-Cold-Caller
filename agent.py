@@ -583,6 +583,8 @@ async def entrypoint(ctx: agents.JobContext):
                 "timestamp": datetime.now().isoformat(),
             })
             logger.info(f"[TRANSCRIPT] User: {text[:100]}")
+            # Log to Supabase for remote debugging
+            asyncio.ensure_future(_log("info", f"SPEECH-USER: {text[:100]}"))
 
     @session.on("agent_speech_committed")
     def _on_agent_speech(msg):
@@ -598,6 +600,8 @@ async def entrypoint(ctx: agents.JobContext):
                 "timestamp": datetime.now().isoformat(),
             })
             logger.info(f"[TRANSCRIPT] Agent: {text[:100]}")
+            # Log to Supabase for remote debugging
+            asyncio.ensure_future(_log("info", f"SPEECH-AGENT: {text[:100]}"))
 
     # Save transcript when room disconnects
     @ctx.room.on("disconnected")
